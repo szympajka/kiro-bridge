@@ -80,6 +80,13 @@ func handleChatCompletions(b Bridge) http.HandlerFunc {
 	}
 }
 
+func writeStreamTerminal(w http.ResponseWriter, flusher http.Flusher, id string, created int64, model, finishReason string) {
+	finalJSON := fmt.Sprintf(`{"id":%q,"object":"chat.completion.chunk","created":%d,"model":%q,"choices":[{"index":0,"delta":{},"finish_reason":%q}]}`, id, created, model, finishReason)
+	fmt.Fprintf(w, "data: %s\n\n", finalJSON)
+	fmt.Fprintf(w, "data: [DONE]\n\n")
+	flusher.Flush()
+}
+
 func handleStream(w http.ResponseWriter, b Bridge, prompt, id string, created int64, model string) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -116,17 +123,15 @@ func handleStream(w http.ResponseWriter, b Bridge, prompt, id string, created in
 
 	if err != nil {
 		log.Printf("error: prompt failed: %v", err)
-		// If no chunks were sent yet, we can still return an error
 		if first {
 			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
 		}
+		writeStreamTerminal(w, flusher, id, created, model, "error")
 		return
 	}
 
-	finalJSON := fmt.Sprintf(`{"id":%q,"object":"chat.completion.chunk","created":%d,"model":%q,"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`, id, created, model)
-	fmt.Fprintf(w, "data: %s\n\n", finalJSON)
-	fmt.Fprintf(w, "data: [DONE]\n\n")
-	flusher.Flush()
+	writeStreamTerminal(w, flusher, id, created, model, "stop")
 }
 
 func handleNonStream(w http.ResponseWriter, b Bridge, prompt, id string, created int64, model string) {

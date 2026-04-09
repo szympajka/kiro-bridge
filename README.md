@@ -12,6 +12,7 @@ Client  ──POST /v1/chat/completions──▶  kiro-bridge  ──JSON-RPC/st
 - Translates OpenAI `POST /v1/chat/completions` to ACP `session/prompt`
 - Streaming (SSE) and non-streaming responses
 - Pre-approved read-only tools (file search, grep, web search) run transparently inside Kiro
+- One persistent ACP session per bridge process; stateless mode is not implemented yet
 - Configurable agent, working directory, body limit, and logging
 - Localhost only, 1MB default body limit
 
@@ -220,13 +221,24 @@ go test -v ./...
 go test -tags e2e -timeout 60s -v ./...
 ```
 
+## Release Helpers
+
+```bash
+# create annotated tag from .version
+nix run .#tag-release
+
+# create the tag, then push the current branch and tags
+nix run .#release
+```
+
 ## How it works
 
 - The bridge spawns `kiro-cli acp` as a child process and communicates via JSON-RPC over stdio.
+- It creates one ACP session at startup and reuses it for subsequent requests.
 - Incoming OpenAI `/v1/chat/completions` requests are translated to ACP `session/prompt` calls.
 - ACP `agent_message_chunk` notifications are streamed back as OpenAI SSE chunks.
 - Kiro tool calls (file search, web fetch, etc.) happen transparently inside the ACP session — only the final text response is returned to the client.
-- System messages from the OpenAI request are prepended to the user message as context.
+- System and user messages from the current request are flattened into a single prompt; full conversation replay from `messages[]` is planned but not implemented yet.
 
 ---
 

@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"sync"
 	"time"
 )
+
+var execCommand = exec.Command
 
 // Bridge manages the kiro-cli ACP process and provides prompt functionality.
 type Bridge interface {
@@ -54,7 +55,7 @@ func NewBridge(cfg BridgeConfig) (Bridge, error) {
 }
 
 func (b *bridge) start() error {
-	b.cmd = exec.Command(b.cliPath, "acp")
+	b.cmd = execCommand(b.cliPath, "acp")
 	b.cmd.Stderr = &debugWriter{prefix: "[kiro-cli] "}
 
 	var err error
@@ -84,7 +85,7 @@ func (b *bridge) start() error {
 
 	if b.agent != "" {
 		if err := b.setMode(); err != nil {
-			log.Printf("warning: set_mode failed: %v", err)
+			return fmt.Errorf("set mode: %w", err)
 		}
 	}
 

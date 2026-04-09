@@ -11,18 +11,22 @@ import (
 )
 
 type mockBridge struct {
-	chunks   []string
-	gotText  string
-	promptErr error
+	chunks               []string
+	gotText              string
+	promptErr            error
+	promptErrAfterChunks bool
 }
 
 func (m *mockBridge) Prompt(text string, onChunk func(string)) (string, error) {
 	m.gotText = text
-	if m.promptErr != nil {
+	if m.promptErr != nil && !m.promptErrAfterChunks {
 		return "", m.promptErr
 	}
 	for _, c := range m.chunks {
 		onChunk(c)
+	}
+	if m.promptErr != nil {
+		return "", m.promptErr
 	}
 	return "end_turn", nil
 }
@@ -247,21 +251,30 @@ func TestStreamThroughMiddleware(t *testing.T) {
 
 func TestChatContentUnmarshalEdgeCases(t *testing.T) {
 	tests := []struct {
-		name string
-		json string
-		want string
+		name    string
+		json    string
+		want    string
+		wantErr bool
 	}{
-		{"null content", `null`, ""},
-		{"empty string", `""`, ""},
-		{"empty array", `[]`, ""},
-		{"array with non-text type", `[{"type":"image_url","url":"http://x"}]`, ""},
-		{"array with mixed types", `[{"type":"image_url","url":"x"},{"type":"text","text":"hi"}]`, "hi"},
-		{"multiple text parts", `[{"type":"text","text":"a"},{"type":"text","text":"b"}]`, "ab"},
+		{"null content", `null`, "", false},
+		{"empty string", `""`, "", false},
+		{"empty array", `[]`, "", false},
+		{"array with non-text type", `[{"type":"image_url","url":"http://x"}]`, "", false},
+		{"array with mixed types", `[{"type":"image_url","url":"x"},{"type":"text","text":"hi"}]`, "hi", false},
+		{"multiple text parts", `[{"type":"text","text":"a"},{"type":"text","text":"b"}]`, "ab", false},
+		{"invalid object", `{"type":"text","text":"hi"}`, "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var c ChatContent
-			if err := json.Unmarshal([]byte(tt.json), &c); err != nil {
+			err := json.Unmarshal([]byte(tt.json), &c)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected unmarshal error")
+				}
+				return
+			}
+			if err != nil {
 				t.Fatalf("unmarshal error: %v", err)
 			}
 			if c.Text != tt.want {
@@ -321,6 +334,62 @@ func TestHandleStreamPromptError(t *testing.T) {
 	// Should return 502 since no chunks were sent before the error
 	if w.Code != http.StatusBadGateway {
 		t.Errorf("status = %d, want 502", w.Code)
+	}
+}
+
+func TestHandleStreamPromptErrorAfterChunks(t *testing.T) {
+	mock := &mockBridge{
+		chunks:               []string{"Hello"},
+		promptErr:            io.EOF,
+		promptErrAfterChunks: true,
+	}
+	handler := handleChatCompletions(mock)
+
+	body := `{"model":"kiro","messages":[{"role":"user","content":"hi"}],"stream":true}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	handler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(w.Body.String()))
+	var events []string
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "data: ") {
+			events = append(events, strings.TrimPrefix(line, "data: "))
+		}
+	}
+
+	if len(events) != 3 {
+		t.Fatalf("events = %d, want 3; got:\n%s", len(events), w.Body.String())
+	}
+
+	var final ChatCompletionResponse
+	if err := json.Unmarshal([]byte(events[1]), &final); err != nil {
+		t.Fatalf("unmarshal final event: %v", err)
+	}
+	if final.Choices[0].FinishReason == nil || *final.Choices[0].FinishReason != "error" {
+		t.Fatalf("finish_reason = %v, want error", final.Choices[0].FinishReason)
+	}
+	if events[2] != "[DONE]" {
+		t.Fatalf("last event = %q, want [DONE]", events[2])
+	}
+}
+
+func TestHandleInvalidContentShape(t *testing.T) {
+	mock := &mockBridge{}
+	handler := handleChatCompletions(mock)
+
+	body := `{"model":"kiro","messages":[{"role":"user","content":{"type":"text","text":"hi"}}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	handler(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", w.Code)
 	}
 }
 

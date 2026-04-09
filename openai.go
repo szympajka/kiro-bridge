@@ -1,13 +1,16 @@
 package main
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // OpenAI Chat Completions API types
 
 type ChatCompletionRequest struct {
-	Model    string          `json:"model"`
-	Messages []ChatMessage   `json:"messages"`
-	Stream   bool            `json:"stream,omitempty"`
+	Model    string        `json:"model"`
+	Messages []ChatMessage `json:"messages"`
+	Stream   bool          `json:"stream,omitempty"`
 }
 
 type ChatMessage struct {
@@ -21,6 +24,12 @@ type ChatContent struct {
 }
 
 func (c *ChatContent) UnmarshalJSON(data []byte) error {
+	c.Text = ""
+
+	if string(data) == "null" {
+		return nil
+	}
+
 	// Try string first
 	var s string
 	if err := json.Unmarshal(data, &s); err == nil {
@@ -40,7 +49,8 @@ func (c *ChatContent) UnmarshalJSON(data []byte) error {
 		}
 		return nil
 	}
-	return nil
+
+	return fmt.Errorf("unsupported content format")
 }
 
 func (c ChatContent) MarshalJSON() ([]byte, error) {
@@ -48,11 +58,11 @@ func (c ChatContent) MarshalJSON() ([]byte, error) {
 }
 
 type ChatCompletionResponse struct {
-	ID      string             `json:"id"`
-	Object  string             `json:"object"`
-	Created int64              `json:"created"`
-	Model   string             `json:"model"`
-	Choices []ChatChoice       `json:"choices"`
+	ID      string       `json:"id"`
+	Object  string       `json:"object"`
+	Created int64        `json:"created"`
+	Model   string       `json:"model"`
+	Choices []ChatChoice `json:"choices"`
 }
 
 type ChatChoice struct {
