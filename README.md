@@ -15,12 +15,15 @@ Client  ──POST /v1/chat/completions──▶  kiro-bridge  ──JSON-RPC/st
 - Configurable agent, working directory, body limit, and logging
 - Localhost only, 1MB default body limit
 
+> This is a minimal bridge: you can prompt and stream responses, but intermediate steps like tool calls and reasoning are not yet surfaced to the client. See [Planned](#planned) for what's coming.
+
 ## Planned
 
+- Surface tool calls and reasoning steps as streaming events
+- Conversation history replay from OpenAI messages array
 - Session file cleanup on shutdown
 - Stateless mode — new ACP session per request, no context carryover
 - Session TTL — auto-prune stale sessions
-- Conversation history replay from OpenAI messages array
 - Linux systemd service example
 
 ## Prerequisites
