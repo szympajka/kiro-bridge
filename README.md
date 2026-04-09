@@ -126,26 +126,32 @@ All configuration is via environment variables:
 
 ## Running as a background service
 
-### Option A: Nix Home Manager (recommended for Nix-managed systems)
+### Option A: Nix Darwin module (recommended)
 
-Add to your Home Manager config:
+Add the flake input and import the module:
 
 ```nix
-launchd.agents.kiro-bridge = {
+# flake.nix
+inputs.kiro-bridge.url = "github:szympajka/kiro-bridge";
+
+# darwin configuration
+imports = [ inputs.kiro-bridge.darwinModules.default ];
+services.kiro-bridge = {
   enable = true;
-  config = {
-    Program = "/path/to/kiro-bridge";
-    EnvironmentVariables = {
-      KIRO_BRIDGE_CWD = "/Users/you";
-      KIRO_CLI_PATH = "/path/to/kiro-cli";
-    };
-    KeepAlive = true;
-    RunAtLoad = true;
-    StandardOutPath = "/tmp/kiro-bridge.log";
-    StandardErrorPath = "/tmp/kiro-bridge.log";
-  };
+  user = "youruser";
 };
 ```
+
+This sets up a launchd service with sensible defaults. Available options:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `user` | (required) | macOS username |
+| `cwd` | `/Users/<user>` | Working directory for ACP sessions |
+| `cliPath` | `~/.nix-profile/bin/kiro-cli` | Path to kiro-cli binary |
+| `port` | `11435` | HTTP server port |
+| `agent` | `kiro-bridge` | Kiro agent config to activate |
+| `extraEnv` | `{}` | Extra environment variables |
 
 ### Option B: macOS launchd plist (without Nix)
 
