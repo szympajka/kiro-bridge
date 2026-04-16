@@ -22,8 +22,8 @@ func TestNewRequest(t *testing.T) {
 	if req.JSONRPC != "2.0" {
 		t.Errorf("jsonrpc = %q, want %q", req.JSONRPC, "2.0")
 	}
-	if req.ID != 1 {
-		t.Errorf("id = %d, want 1", req.ID)
+	if req.ID.Num != 1 {
+		t.Errorf("id = %d, want 1", req.ID.Num)
 	}
 	if req.Method != "initialize" {
 		t.Errorf("method = %q, want %q", req.Method, "initialize")
@@ -210,5 +210,118 @@ func TestRPCErrorFormatOmitsDataWhenAbsent(t *testing.T) {
 	}
 	if strings.Contains(got, "data") {
 		t.Errorf("error = %q, should not contain data", got)
+	}
+}
+
+func TestRPCIDUnmarshalInt(t *testing.T) {
+	var id RPCID
+	if err := json.Unmarshal([]byte(`42`), &id); err != nil {
+		t.Fatal(err)
+	}
+	if id.Str != "" || id.Num != 42 {
+		t.Errorf("got %+v, want Num=42", id)
+	}
+}
+
+func TestRPCIDUnmarshalString(t *testing.T) {
+	var id RPCID
+	if err := json.Unmarshal([]byte(`"c0104696-fd9f-46a0-ad16-be66b3f71402"`), &id); err != nil {
+		t.Fatal(err)
+	}
+	if id.Str != "c0104696-fd9f-46a0-ad16-be66b3f71402" {
+		t.Errorf("got %+v, want Str=UUID", id)
+	}
+}
+
+func TestRPCIDMarshalInt(t *testing.T) {
+	id := RPCID{Num: 5}
+	data, err := json.Marshal(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "5" {
+		t.Errorf("got %s, want 5", data)
+	}
+}
+
+func TestRPCIDMarshalString(t *testing.T) {
+	id := RPCID{Str: "abc-123"}
+	data, err := json.Marshal(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != `"abc-123"` {
+		t.Errorf("got %s, want %q", data, "abc-123")
+	}
+}
+
+func TestResponseWithStringID(t *testing.T) {
+	input := `{"jsonrpc":"2.0","id":"c0104696-fd9f","result":{}}`
+	var resp Response
+	if err := json.Unmarshal([]byte(input), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.ID.Str != "c0104696-fd9f" {
+		t.Errorf("id = %+v, want Str=c0104696-fd9f", resp.ID)
+	}
+}
+
+func TestResponseWithIntID(t *testing.T) {
+	input := `{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}`
+	var resp Response
+	if err := json.Unmarshal([]byte(input), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.ID.Num != 3 {
+		t.Errorf("id = %+v, want Num=3", resp.ID)
+	}
+}
+
+func TestIsResponseWithStringID(t *testing.T) {
+	line := `{"jsonrpc":"2.0","id":"uuid-here","result":{}}`
+	if !isResponse([]byte(line)) {
+		t.Error("expected isResponse=true for string ID response")
+	}
+}
+
+func TestIncomingRequestHasIDAndMethod(t *testing.T) {
+	line := `{"jsonrpc":"2.0","id":"c010","method":"session/request_permission","params":{}}`
+	msg := classifyMessage([]byte(line))
+	if msg != messageRequest {
+		t.Errorf("got %v, want messageRequest", msg)
+	}
+}
+
+func TestNotificationHasMethodNoID(t *testing.T) {
+	line := `{"jsonrpc":"2.0","method":"session/update","params":{}}`
+	msg := classifyMessage([]byte(line))
+	if msg != messageNotification {
+		t.Errorf("got %v, want messageNotification", msg)
+	}
+}
+
+func TestResponseHasIDNoMethod(t *testing.T) {
+	line := `{"jsonrpc":"2.0","id":1,"result":{}}`
+	msg := classifyMessage([]byte(line))
+	if msg != messageResponse {
+		t.Errorf("got %v, want messageResponse", msg)
+	}
+}
+
+func TestNewResponseMarshal(t *testing.T) {
+	id := RPCID{Str: "abc-123"}
+	data, err := newResponse(id, json.RawMessage(`{"outcome":{"outcome":"selected","optionId":"allow_once"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(data)
+	if !strings.Contains(s, `"id":"abc-123"`) {
+		t.Errorf("missing string id: %s", s)
+	}
+	if !strings.Contains(s, `"result":{`) {
+		t.Errorf("missing result: %s", s)
+	}
+	if !strings.Contains(s, `"jsonrpc":"2.0"`) {
+		t.Errorf("missing jsonrpc: %s", s)
 	}
 }
