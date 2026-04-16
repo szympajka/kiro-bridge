@@ -117,3 +117,34 @@ func TestBridgeHelperProcess(t *testing.T) {
 
 	os.Exit(0)
 }
+
+func TestNewBridgeSetModeErrorIncludesCode(t *testing.T) {
+	oldExecCommand := execCommand
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestBridgeHelperProcess", "--"}
+		cs = append(cs, args...)
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = append(os.Environ(),
+			"GO_WANT_HELPER_PROCESS=1",
+			"KIRO_BRIDGE_HELPER_MODE=set-mode-error",
+		)
+		return cmd
+	}
+	defer func() { execCommand = oldExecCommand }()
+
+	_, err := NewBridge(BridgeConfig{
+		CLIPath: "kiro-cli",
+		CWD:     ".",
+		Agent:   "kiro-bridge",
+		Version: "test",
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "code -32000") {
+		t.Fatalf("error = %q, want error code -32000", err)
+	}
+	if !strings.Contains(err.Error(), "mode activation failed") {
+		t.Fatalf("error = %q, want message", err)
+	}
+}

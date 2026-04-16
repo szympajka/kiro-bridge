@@ -1,6 +1,9 @@
 package main
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 type Request struct {
 	JSONRPC string          `json:"jsonrpc"`
@@ -28,8 +31,16 @@ func isResponse(line []byte) bool {
 }
 
 type RPCError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	Code    int              `json:"code"`
+	Message string           `json:"message"`
+	Data    json.RawMessage  `json:"data,omitempty"`
+}
+
+func (e *RPCError) Error() string {
+	if len(e.Data) > 0 {
+		return fmt.Sprintf("code %d: %s (data: %s)", e.Code, e.Message, e.Data)
+	}
+	return fmt.Sprintf("code %d: %s", e.Code, e.Message)
 }
 
 type Notification struct {

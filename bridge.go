@@ -155,7 +155,7 @@ func (b *bridge) initialize() error {
 		return fmt.Errorf("reading initialize response: %w", err)
 	}
 	if resp.Error != nil {
-		return fmt.Errorf("initialize error: %s", resp.Error.Message)
+		return fmt.Errorf("initialize error: %w", resp.Error)
 	}
 	debugf("debug: initialize ok")
 	return nil
@@ -174,7 +174,7 @@ func (b *bridge) newSession() error {
 		return fmt.Errorf("reading session/new response: %w", err)
 	}
 	if resp.Error != nil {
-		return fmt.Errorf("session/new error: %s", resp.Error.Message)
+		return fmt.Errorf("session/new error: %w", resp.Error)
 	}
 	var result SessionNewResult
 	if err := json.Unmarshal(resp.Result, &result); err != nil {
@@ -200,7 +200,7 @@ func (b *bridge) setMode() error {
 		return err
 	}
 	if resp.Error != nil {
-		return fmt.Errorf("set_mode error: %s", resp.Error.Message)
+		return fmt.Errorf("set_mode error: %w", resp.Error)
 	}
 	return nil
 }
@@ -242,7 +242,7 @@ func (b *bridge) Prompt(text string, onChunk func(string)) (string, error) {
 		return "", err
 	}
 	if resp.Error != nil {
-		return "", fmt.Errorf("prompt error: %s", resp.Error.Message)
+		return "", fmt.Errorf("prompt error: %w", resp.Error)
 	}
 
 	var result SessionPromptResult

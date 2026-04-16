@@ -136,3 +136,79 @@ func TestSessionNewRequestIncludesMcpServers(t *testing.T) {
 		t.Errorf("expected mcpServers:[], got: %s", data)
 	}
 }
+
+func TestRPCErrorParseWithData(t *testing.T) {
+	input := `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"Internal error","data":"session expired"}}`
+	var resp Response
+	if err := json.Unmarshal([]byte(input), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Error == nil {
+		t.Fatal("expected error")
+	}
+	if resp.Error.Code != -32603 {
+		t.Errorf("code = %d, want -32603", resp.Error.Code)
+	}
+	if resp.Error.Message != "Internal error" {
+		t.Errorf("message = %q, want %q", resp.Error.Message, "Internal error")
+	}
+	if resp.Error.Data == nil {
+		t.Fatal("expected data to be present")
+	}
+	if string(resp.Error.Data) != `"session expired"` {
+		t.Errorf("data = %s, want %q", resp.Error.Data, `"session expired"`)
+	}
+}
+
+func TestRPCErrorParseWithoutData(t *testing.T) {
+	input := `{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found"}}`
+	var resp Response
+	if err := json.Unmarshal([]byte(input), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Error.Data != nil {
+		t.Errorf("expected nil data, got %s", resp.Error.Data)
+	}
+}
+
+func TestRPCErrorParseWithStructuredData(t *testing.T) {
+	input := `{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"Server error","data":{"detail":"rate limited","retry_after":30}}}`
+	var resp Response
+	if err := json.Unmarshal([]byte(input), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Error.Data == nil {
+		t.Fatal("expected structured data")
+	}
+	if !strings.Contains(string(resp.Error.Data), "rate limited") {
+		t.Errorf("data = %s, want rate limited info", resp.Error.Data)
+	}
+}
+
+func TestRPCErrorFormatIncludesData(t *testing.T) {
+	err := &RPCError{Code: -32603, Message: "Internal error", Data: json.RawMessage(`"extra info"`)}
+	got := err.Error()
+	if !strings.Contains(got, "code -32603") {
+		t.Errorf("error = %q, missing code", got)
+	}
+	if !strings.Contains(got, "Internal error") {
+		t.Errorf("error = %q, missing message", got)
+	}
+	if !strings.Contains(got, "extra info") {
+		t.Errorf("error = %q, missing data", got)
+	}
+}
+
+func TestRPCErrorFormatOmitsDataWhenAbsent(t *testing.T) {
+	err := &RPCError{Code: -32601, Message: "Method not found"}
+	got := err.Error()
+	if !strings.Contains(got, "code -32601") {
+		t.Errorf("error = %q, missing code", got)
+	}
+	if !strings.Contains(got, "Method not found") {
+		t.Errorf("error = %q, missing message", got)
+	}
+	if strings.Contains(got, "data") {
+		t.Errorf("error = %q, should not contain data", got)
+	}
+}
