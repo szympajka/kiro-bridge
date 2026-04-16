@@ -14,8 +14,21 @@ type ChatCompletionRequest struct {
 }
 
 type ChatMessage struct {
-	Role    string      `json:"role,omitempty"`
-	Content ChatContent `json:"content"`
+	Role      string      `json:"role,omitempty"`
+	Content   ChatContent `json:"content"`
+	ToolCalls []ToolCall  `json:"tool_calls,omitempty"`
+}
+
+type ToolCall struct {
+	Index    int              `json:"index"`
+	ID       string           `json:"id,omitempty"`
+	Type     string           `json:"type,omitempty"`
+	Function ToolCallFunction `json:"function"`
+}
+
+type ToolCallFunction struct {
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments"`
 }
 
 // ChatContent handles both "content": "string" and "content": [{"type":"text","text":"..."}]

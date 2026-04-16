@@ -173,6 +173,7 @@ type SessionUpdate struct {
 	SessionUpdate string       `json:"sessionUpdate"`
 	Content       ContentBlock `json:"content,omitempty"`
 	ToolCallID    string       `json:"toolCallId,omitempty"`
+	Title         string       `json:"title,omitempty"`
 	Status        string       `json:"status,omitempty"`
 }
 

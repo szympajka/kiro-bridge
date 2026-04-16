@@ -17,13 +17,13 @@ type mockBridge struct {
 	promptErrAfterChunks bool
 }
 
-func (m *mockBridge) Prompt(text string, onChunk func(string)) (string, error) {
+func (m *mockBridge) Prompt(text string, onEvent func(PromptEvent)) (string, error) {
 	m.gotText = text
 	if m.promptErr != nil && !m.promptErrAfterChunks {
 		return "", m.promptErr
 	}
 	for _, c := range m.chunks {
-		onChunk(c)
+		onEvent(PromptEvent{Type: EventText, Text: c})
 	}
 	if m.promptErr != nil {
 		return "", m.promptErr
@@ -447,5 +447,145 @@ func TestLogMiddlewareVerbose(t *testing.T) {
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestToolCallMarshal(t *testing.T) {
+	tc := ToolCall{
+		Index:    0,
+		ID:       "call_1",
+		Type:     "function",
+		Function: ToolCallFunction{Name: "read", Arguments: `{"path":"main.go"}`},
+	}
+	data, err := json.Marshal(tc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(data)
+	if !strings.Contains(s, `"id":"call_1"`) {
+		t.Errorf("missing id: %s", s)
+	}
+	if !strings.Contains(s, `"type":"function"`) {
+		t.Errorf("missing type: %s", s)
+	}
+	if !strings.Contains(s, `"name":"read"`) {
+		t.Errorf("missing function name: %s", s)
+	}
+}
+
+func TestToolCallInDelta(t *testing.T) {
+	msg := ChatMessage{
+		Role: "assistant",
+		ToolCalls: []ToolCall{{
+			Index:    0,
+			ID:       "call_1",
+			Type:     "function",
+			Function: ToolCallFunction{Name: "grep"},
+		}},
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(data)
+	if !strings.Contains(s, `"tool_calls"`) {
+		t.Errorf("missing tool_calls: %s", s)
+	}
+	if !strings.Contains(s, `"name":"grep"`) {
+		t.Errorf("missing function name: %s", s)
+	}
+}
+
+func TestToolCallOmittedWhenEmpty(t *testing.T) {
+	msg := ChatMessage{
+		Role:    "assistant",
+		Content: ChatContent{Text: "hello"},
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "tool_calls") {
+		t.Errorf("tool_calls should be omitted when empty: %s", data)
+	}
+}
+
+type mockBridgeWithToolCalls struct {
+	gotText string
+}
+
+func (m *mockBridgeWithToolCalls) Prompt(text string, onEvent func(PromptEvent)) (string, error) {
+	m.gotText = text
+	onEvent(PromptEvent{
+		Type:       EventToolCall,
+		ToolCallID: "call_1",
+		ToolName:   "read",
+		ToolInput:  `{"path":"main.go"}`,
+	})
+	onEvent(PromptEvent{
+		Type:       EventToolCallUpdate,
+		ToolCallID: "call_1",
+		ToolStatus: "completed",
+	})
+	onEvent(PromptEvent{Type: EventText, Text: "Here are the contents."})
+	return "end_turn", nil
+}
+
+func (m *mockBridgeWithToolCalls) Close() error { return nil }
+
+func TestHandleStreamWithToolCalls(t *testing.T) {
+	old := showToolAnnotations
+	showToolAnnotations = true
+	defer func() { showToolAnnotations = old }()
+
+	mock := &mockBridgeWithToolCalls{}
+	handler := handleChatCompletions(mock)
+
+	body := `{"model":"kiro","messages":[{"role":"user","content":"read main.go"}],"stream":true}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(w.Body.String()))
+	var events []string
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "data: ") {
+			events = append(events, strings.TrimPrefix(line, "data: "))
+		}
+	}
+
+	// Should have: tool annotation text, content text, finish chunk, [DONE]
+	var hasToolText, hasContentText bool
+	for _, ev := range events {
+		if ev == "[DONE]" {
+			continue
+		}
+		var resp ChatCompletionResponse
+		if err := json.Unmarshal([]byte(ev), &resp); err != nil {
+			continue
+		}
+		if len(resp.Choices) == 0 {
+			continue
+		}
+		delta := resp.Choices[0].Delta
+		if delta != nil && strings.Contains(delta.Content.Text, "🔧") {
+			hasToolText = true
+		}
+		if delta != nil && delta.Content.Text == "Here are the contents." {
+			hasContentText = true
+		}
+	}
+	if !hasToolText {
+		t.Errorf("no tool annotation found in events:\n%s", w.Body.String())
+	}
+	if !hasContentText {
+		t.Errorf("no content text found in events:\n%s", w.Body.String())
 	}
 }

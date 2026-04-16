@@ -15,9 +15,27 @@ var execCommand = exec.Command
 
 // Bridge manages the kiro-cli ACP process and provides prompt functionality.
 type Bridge interface {
-	Prompt(text string, onChunk func(string)) (string, error)
+	Prompt(text string, onEvent func(PromptEvent)) (string, error)
 	Close() error
 }
+
+// PromptEvent represents an event during a prompt turn.
+type PromptEvent struct {
+	Type       PromptEventType
+	Text       string // for EventText
+	ToolCallID string // for EventToolCall, EventToolCallUpdate
+	ToolName   string // for EventToolCall
+	ToolInput  string // for EventToolCall (JSON arguments)
+	ToolStatus string // for EventToolCallUpdate
+}
+
+type PromptEventType int
+
+const (
+	EventText           PromptEventType = iota
+	EventToolCall                        // tool_call: new tool invocation
+	EventToolCallUpdate                  // tool_call_update: status change
+)
 
 type bridge struct {
 	cmd     *exec.Cmd
@@ -240,7 +258,7 @@ func (b *bridge) setMode() error {
 	return nil
 }
 
-func (b *bridge) Prompt(text string, onChunk func(string)) (string, error) {
+func (b *bridge) Prompt(text string, onEvent func(PromptEvent)) (string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -269,8 +287,34 @@ func (b *bridge) Prompt(text string, onChunk func(string)) (string, error) {
 			debugf("debug: unmarshal session update: %v", err)
 			return
 		}
-		if update.SessionUpdate == "agent_message_chunk" && update.Content.Text != "" {
-			onChunk(update.Content.Text)
+		switch update.SessionUpdate {
+		case "agent_message_chunk":
+			if update.Content.Text != "" {
+				onEvent(PromptEvent{Type: EventText, Text: update.Content.Text})
+			}
+		case "tool_call":
+			ev := PromptEvent{
+				Type:       EventToolCall,
+				ToolCallID: update.ToolCallID,
+				ToolName:   update.Title,
+				ToolStatus: update.Status,
+			}
+			if len(params.Update) > 0 {
+				var raw struct {
+					RawInput json.RawMessage `json:"rawInput"`
+				}
+				json.Unmarshal(params.Update, &raw)
+				if raw.RawInput != nil {
+					ev.ToolInput = string(raw.RawInput)
+				}
+			}
+			onEvent(ev)
+		case "tool_call_update":
+			onEvent(PromptEvent{
+				Type:       EventToolCallUpdate,
+				ToolCallID: update.ToolCallID,
+				ToolStatus: update.Status,
+			})
 		}
 	})
 	if err != nil {

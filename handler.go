@@ -29,6 +29,8 @@ var completionCounter int64
 
 var maxBodyBytes int64 = 1 << 20 // 1MB default
 
+var showToolAnnotations = os.Getenv("KIRO_BRIDGE_SHOW_TOOLS") != ""
+
 func init() {
 	if v := os.Getenv("KIRO_BRIDGE_MAX_BODY"); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
@@ -99,8 +101,19 @@ func handleStream(w http.ResponseWriter, b Bridge, prompt, id string, created in
 	w.Header().Set("Connection", "keep-alive")
 
 	first := true
-	_, err := b.Prompt(prompt, func(chunk string) {
-		delta := &ChatMessage{Content: ChatContent{Text: chunk}}
+	_, err := b.Prompt(prompt, func(ev PromptEvent) {
+		var delta *ChatMessage
+		switch ev.Type {
+		case EventText:
+			delta = &ChatMessage{Content: ChatContent{Text: ev.Text}}
+		case EventToolCall:
+			if !showToolAnnotations {
+				return
+			}
+			delta = &ChatMessage{Content: ChatContent{Text: fmt.Sprintf("> 🔧 %s\n\n", ev.ToolName)}}
+		default:
+			return
+		}
 		if first {
 			delta.Role = "assistant"
 			first = false
@@ -136,8 +149,10 @@ func handleStream(w http.ResponseWriter, b Bridge, prompt, id string, created in
 
 func handleNonStream(w http.ResponseWriter, b Bridge, prompt, id string, created int64, model string) {
 	var full strings.Builder
-	_, err := b.Prompt(prompt, func(chunk string) {
-		full.WriteString(chunk)
+	_, err := b.Prompt(prompt, func(ev PromptEvent) {
+		if ev.Type == EventText {
+			full.WriteString(ev.Text)
+		}
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)

@@ -93,6 +93,64 @@ func TestBridgeHelperProcess(t *testing.T) {
 				"result":  map[string]any{},
 			}
 		case "session/prompt":
+			if mode == "tool-call" {
+				// Send tool_call notification
+				toolCall := map[string]any{
+					"jsonrpc": "2.0",
+					"method":  "session/update",
+					"params": map[string]any{
+						"sessionId": "sess-1",
+						"update": map[string]any{
+							"sessionUpdate": "tool_call",
+							"toolCallId":    "call_abc",
+							"title":         "Reading main.go",
+							"kind":          "read",
+							"rawInput":      map[string]any{"path": "main.go"},
+						},
+					},
+				}
+				d, _ := json.Marshal(toolCall)
+				writer.Write(append(d, '\n'))
+
+				// Send tool_call_update notification
+				toolUpdate := map[string]any{
+					"jsonrpc": "2.0",
+					"method":  "session/update",
+					"params": map[string]any{
+						"sessionId": "sess-1",
+						"update": map[string]any{
+							"sessionUpdate": "tool_call_update",
+							"toolCallId":    "call_abc",
+							"status":        "completed",
+						},
+					},
+				}
+				d, _ = json.Marshal(toolUpdate)
+				writer.Write(append(d, '\n'))
+
+				// Send text chunk
+				chunk := map[string]any{
+					"jsonrpc": "2.0",
+					"method":  "session/update",
+					"params": map[string]any{
+						"sessionId": "sess-1",
+						"update": map[string]any{
+							"sessionUpdate": "agent_message_chunk",
+							"content":       map[string]any{"type": "text", "text": "file contents here"},
+						},
+					},
+				}
+				d, _ = json.Marshal(chunk)
+				writer.Write(append(d, '\n'))
+				writer.Flush()
+
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req.ID,
+					"result":  map[string]any{"stopReason": "end_turn"},
+				}
+				break
+			}
 			if mode == "permission-request" {
 				// Send a permission request (agent→client) before responding
 				permReq := map[string]any{
@@ -227,8 +285,10 @@ func TestBridgeRejectsPermissionRequest(t *testing.T) {
 	defer b.Close()
 
 	var chunks []string
-	_, err = b.Prompt("create a file", func(chunk string) {
-		chunks = append(chunks, chunk)
+	_, err = b.Prompt("create a file", func(ev PromptEvent) {
+		if ev.Type == EventText {
+			chunks = append(chunks, ev.Text)
+		}
 	})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
@@ -236,5 +296,73 @@ func TestBridgeRejectsPermissionRequest(t *testing.T) {
 	// Prompt should complete without deadlocking — the rejection unblocks the turn
 	if len(chunks) == 0 {
 		t.Fatal("expected at least one chunk")
+	}
+}
+
+func TestBridgeEmitsToolCallEvents(t *testing.T) {
+	oldExecCommand := execCommand
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestBridgeHelperProcess", "--"}
+		cs = append(cs, args...)
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = append(os.Environ(),
+			"GO_WANT_HELPER_PROCESS=1",
+			"KIRO_BRIDGE_HELPER_MODE=tool-call",
+		)
+		return cmd
+	}
+	defer func() { execCommand = oldExecCommand }()
+
+	b, err := NewBridge(BridgeConfig{
+		CLIPath: "kiro-cli",
+		CWD:     ".",
+		Agent:   "kiro-bridge",
+		Version: "test",
+	})
+	if err != nil {
+		t.Fatalf("NewBridge: %v", err)
+	}
+	defer b.Close()
+
+	var events []PromptEvent
+	_, err = b.Prompt("list files", func(ev PromptEvent) {
+		events = append(events, ev)
+	})
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+
+	// Expect: tool_call event, tool_call_update event, text chunk
+	var hasToolCall, hasToolUpdate, hasText bool
+	for _, ev := range events {
+		switch ev.Type {
+		case EventToolCall:
+			hasToolCall = true
+			if ev.ToolCallID == "" {
+				t.Error("tool_call event missing ToolCallID")
+			}
+			if ev.ToolName == "" {
+				t.Error("tool_call event missing ToolName")
+			}
+		case EventToolCallUpdate:
+			hasToolUpdate = true
+			if ev.ToolCallID == "" {
+				t.Error("tool_call_update event missing ToolCallID")
+			}
+		case EventText:
+			hasText = true
+			if ev.Text == "" {
+				t.Error("text event missing Text")
+			}
+		}
+	}
+	if !hasToolCall {
+		t.Error("missing tool_call event")
+	}
+	if !hasToolUpdate {
+		t.Error("missing tool_call_update event")
+	}
+	if !hasText {
+		t.Error("missing text event")
 	}
 }
