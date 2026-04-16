@@ -97,6 +97,7 @@ func (b *bridge) send(id int, method string, params any) error {
 	if err != nil {
 		return err
 	}
+	debugf("debug: acp >>> %s", data)
 	data = append(data, '\n')
 	_, err = b.stdin.Write(data)
 	return err
@@ -113,6 +114,7 @@ func (b *bridge) readResponseWithCallback(onNotif func(*Notification)) (*Respons
 		if len(line) == 0 {
 			continue
 		}
+		debugf("debug: acp <<< %s", line)
 
 		if isResponse(line) {
 			var resp Response
