@@ -12,17 +12,19 @@ Client  ──POST /v1/chat/completions──▶  kiro-bridge  ──JSON-RPC/st
 - Translates OpenAI `POST /v1/chat/completions` to ACP `session/prompt`
 - Streaming (SSE) and non-streaming responses
 - Pre-approved read-only tools (file search, grep, web search) run transparently inside Kiro
+- Tool call annotations in responses (experimental, enable with `KIRO_BRIDGE_SHOW_TOOLS`)
+- Exponential backoff on startup — retries connecting to kiro-cli instead of crashing, returns 503 while connecting
+- Handles ACP permission requests — rejects by default to prevent unintended writes
 - One persistent ACP session per bridge process; stateless mode is not implemented yet
 - Configurable agent, working directory, body limit, and logging
 - Localhost only, 1MB default body limit
 
-> This is a minimal bridge: you can prompt and stream responses, but intermediate steps like tool calls and reasoning are not yet surfaced to the client. See [Planned](#planned) for what's coming.
+> **Tool permissions:** Kiro requests permission for write/edit tools. The bridge rejects these by default. To allow writes, add the tools to `allowedTools` in your agent config so Kiro pre-approves them without asking.
 
 ## Planned
 
 - Surface tool calls and reasoning steps as streaming events
 - Conversation history replay from OpenAI messages array
-- Session file cleanup on shutdown
 - Stateless mode — new ACP session per request, no context carryover
 - Session TTL — auto-prune stale sessions
 - Linux systemd service example
@@ -235,10 +237,12 @@ nix run .#release
 ## How it works
 
 - The bridge spawns `kiro-cli acp` as a child process and communicates via JSON-RPC over stdio.
+- On startup failure, it retries with exponential backoff (1s→60s cap) instead of crashing. The HTTP server starts immediately and returns 503 while connecting.
 - It creates one ACP session at startup and reuses it for subsequent requests.
 - Incoming OpenAI `/v1/chat/completions` requests are translated to ACP `session/prompt` calls.
 - ACP `agent_message_chunk` notifications are streamed back as OpenAI SSE chunks.
 - Kiro tool calls (file search, web fetch, etc.) happen transparently inside the ACP session — only the final text response is returned to the client.
+- When Kiro requests permission for write tools, the bridge rejects by default. Pre-approved tools in the agent config bypass this.
 - System and user messages from the current request are flattened into a single prompt; full conversation replay from `messages[]` is planned but not implemented yet.
 
 ---
