@@ -92,7 +92,59 @@ func TestBridgeHelperProcess(t *testing.T) {
 				"id":      req.ID,
 				"result":  map[string]any{},
 			}
-		default:
+		case "session/prompt":
+			if mode == "permission-request" {
+				// Send a permission request (agent→client) before responding
+				permReq := map[string]any{
+					"jsonrpc": "2.0",
+					"id":      "perm-uuid-001",
+					"method":  "session/request_permission",
+					"params": map[string]any{
+						"sessionId": "sess-1",
+						"toolCall":  map[string]any{"toolCallId": "call_1", "title": "Writing file"},
+						"options": []map[string]any{
+							{"optionId": "allow_once", "name": "Yes", "kind": "allow_once"},
+							{"optionId": "reject_once", "name": "No", "kind": "reject_once"},
+						},
+					},
+				}
+				permData, _ := json.Marshal(permReq)
+				writer.Write(append(permData, '\n'))
+				writer.Flush()
+
+				// Wait for the bridge to respond to the permission request
+				if !scanner.Scan() {
+					os.Exit(2)
+				}
+
+				// Now send a message chunk and the prompt response
+				chunk := map[string]any{
+					"jsonrpc": "2.0",
+					"method":  "session/update",
+					"params": map[string]any{
+						"sessionId": "sess-1",
+						"update": map[string]any{
+							"sessionUpdate": "agent_message_chunk",
+							"content":       map[string]any{"type": "text", "text": "done"},
+						},
+					},
+				}
+				chunkData, _ := json.Marshal(chunk)
+				writer.Write(append(chunkData, '\n'))
+				writer.Flush()
+
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req.ID,
+					"result":  map[string]any{"stopReason": "end_turn"},
+				}
+				break
+			}
+			resp = map[string]any{
+				"jsonrpc": "2.0",
+				"id":      req.ID,
+				"result":  map[string]any{"stopReason": "end_turn"},
+			}
 			resp = map[string]any{
 				"jsonrpc": "2.0",
 				"id":      req.ID,
@@ -146,5 +198,43 @@ func TestNewBridgeSetModeErrorIncludesCode(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "mode activation failed") {
 		t.Fatalf("error = %q, want message", err)
+	}
+}
+
+func TestBridgeRejectsPermissionRequest(t *testing.T) {
+	oldExecCommand := execCommand
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestBridgeHelperProcess", "--"}
+		cs = append(cs, args...)
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = append(os.Environ(),
+			"GO_WANT_HELPER_PROCESS=1",
+			"KIRO_BRIDGE_HELPER_MODE=permission-request",
+		)
+		return cmd
+	}
+	defer func() { execCommand = oldExecCommand }()
+
+	b, err := NewBridge(BridgeConfig{
+		CLIPath: "kiro-cli",
+		CWD:     ".",
+		Agent:   "kiro-bridge",
+		Version: "test",
+	})
+	if err != nil {
+		t.Fatalf("NewBridge: %v", err)
+	}
+	defer b.Close()
+
+	var chunks []string
+	_, err = b.Prompt("create a file", func(chunk string) {
+		chunks = append(chunks, chunk)
+	})
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	// Prompt should complete without deadlocking — the rejection unblocks the turn
+	if len(chunks) == 0 {
+		t.Fatal("expected at least one chunk")
 	}
 }

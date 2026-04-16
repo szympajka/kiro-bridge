@@ -108,6 +108,7 @@ func (b *bridge) readResponse() (*Response, error) {
 }
 
 // readResponseWithCallback reads until a response arrives, calling onNotif for each notification.
+// Incoming requests (e.g. session/request_permission) are auto-responded to.
 func (b *bridge) readResponseWithCallback(onNotif func(*Notification)) (*Response, error) {
 	for b.scanner.Scan() {
 		line := b.scanner.Bytes()
@@ -116,29 +117,61 @@ func (b *bridge) readResponseWithCallback(onNotif func(*Notification)) (*Respons
 		}
 		debugf("debug: acp <<< %s", line)
 
-		if isResponse(line) {
+		switch classifyMessage(line) {
+		case messageResponse:
 			var resp Response
 			if err := json.Unmarshal(line, &resp); err != nil {
 				debugf("debug: failed to parse response: %s", line)
 				continue
 			}
 			return &resp, nil
-		}
 
-		var notif Notification
-		if err := json.Unmarshal(line, &notif); err == nil && notif.Method != "" {
-			if onNotif != nil {
-				onNotif(&notif)
+		case messageRequest:
+			var req Request
+			if err := json.Unmarshal(line, &req); err != nil {
+				debugf("debug: failed to parse incoming request: %s", line)
+				continue
 			}
-			continue
-		}
+			b.handleIncomingRequest(&req)
 
-		debugf("debug: unrecognized line from acp: %s", line)
+		case messageNotification:
+			var notif Notification
+			if err := json.Unmarshal(line, &notif); err == nil && notif.Method != "" {
+				if onNotif != nil {
+					onNotif(&notif)
+				}
+			}
+
+		default:
+			debugf("debug: unrecognized line from acp: %s", line)
+		}
 	}
 	if err := b.scanner.Err(); err != nil {
 		return nil, err
 	}
 	return nil, io.EOF
+}
+
+func (b *bridge) handleIncomingRequest(req *Request) {
+	switch req.Method {
+	case "session/request_permission":
+		debugf("debug: rejecting permission request id=%v", req.ID)
+		result, _ := json.Marshal(map[string]any{
+			"outcome": map[string]any{
+				"outcome":  "selected",
+				"optionId": "reject_once",
+			},
+		})
+		data, err := newResponse(req.ID, result)
+		if err != nil {
+			debugf("debug: failed to marshal permission response: %v", err)
+			return
+		}
+		data = append(data, '\n')
+		b.stdin.Write(data)
+	default:
+		debugf("debug: unhandled incoming request: %s", req.Method)
+	}
 }
 
 func (b *bridge) initialize() error {
