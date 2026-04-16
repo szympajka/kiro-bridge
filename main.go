@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
+	"time"
 )
 
 func env(key, fallback string) string {
@@ -20,6 +22,53 @@ func env(key, fallback string) string {
 }
 
 var version = "dev"
+
+// bridgeHolder stores a Bridge that may not be ready yet.
+// The handler checks Ready() and returns 503 while connecting.
+type bridgeHolder struct {
+	mu     sync.RWMutex
+	bridge Bridge
+}
+
+func (h *bridgeHolder) Set(b Bridge) {
+	h.mu.Lock()
+	h.bridge = b
+	h.mu.Unlock()
+}
+
+func (h *bridgeHolder) Get() Bridge {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.bridge
+}
+
+var newBridgeFunc = NewBridge
+
+func connectWithBackoff(cfg BridgeConfig, holder *bridgeHolder, stop <-chan struct{}) {
+	delay := time.Second
+	const maxDelay = 60 * time.Second
+
+	for {
+		b, err := newBridgeFunc(cfg)
+		if err == nil {
+			holder.Set(b)
+			log.Printf("bridge connected")
+			return
+		}
+		log.Printf("failed to start bridge: %v (retrying in %s)", err, delay)
+
+		select {
+		case <-stop:
+			return
+		case <-time.After(delay):
+		}
+
+		delay *= 2
+		if delay > maxDelay {
+			delay = maxDelay
+		}
+	}
+}
 
 func main() {
 	port := env("KIRO_BRIDGE_PORT", "11435")
@@ -37,13 +86,21 @@ func main() {
 
 	log.Printf("starting kiro-bridge v%s on 127.0.0.1:%s (cwd=%s, cli=%s, agent=%s)", version, port, cwd, cliPath, agent)
 
-	b, err := NewBridge(BridgeConfig{CLIPath: cliPath, CWD: cwd, Agent: agent, Version: version})
-	if err != nil {
-		log.Fatalf("failed to start bridge: %v", err)
-	}
+	holder := &bridgeHolder{}
+	cfg := BridgeConfig{CLIPath: cliPath, CWD: cwd, Agent: agent, Version: version}
+
+	stop := make(chan struct{})
+	go connectWithBackoff(cfg, holder, stop)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/chat/completions", handleChatCompletions(b))
+	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		b := holder.Get()
+		if b == nil {
+			http.Error(w, "bridge not ready", http.StatusServiceUnavailable)
+			return
+		}
+		handleChatCompletions(b)(w, r)
+	})
 	mux.HandleFunc("/v1/models", handleModels)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		debugf("request: %s %s", r.Method, r.URL.Path)
@@ -52,9 +109,8 @@ func main() {
 
 	server := &http.Server{Addr: fmt.Sprintf("127.0.0.1:%s", port), Handler: logMiddleware(mux)}
 
-	// Graceful shutdown on SIGINT/SIGTERM
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
 		if err := server.ListenAndServe(); err != http.ErrServerClosed {
@@ -62,10 +118,13 @@ func main() {
 		}
 	}()
 
-	<-stop
+	<-sig
 	log.Println("shutting down...")
+	close(stop)
 	server.Shutdown(context.Background())
-	b.Close()
+	if b := holder.Get(); b != nil {
+		b.Close()
+	}
 	log.Println("done")
 }
 
