@@ -589,3 +589,68 @@ func TestHandleStreamWithToolCalls(t *testing.T) {
 		t.Errorf("no content text found in events:\n%s", w.Body.String())
 	}
 }
+
+func TestMaxBody(t *testing.T) {
+	t.Run("default is 1MB", func(t *testing.T) {
+		old := maxBodyBytes
+		defer func() { maxBodyBytes = old }()
+		maxBodyBytes = 1 << 20
+		if maxBodyBytes != 1048576 {
+			t.Errorf("got %d, want %d", maxBodyBytes, 1048576)
+		}
+	})
+	t.Run("rejects oversized request", func(t *testing.T) {
+		old := maxBodyBytes
+		maxBodyBytes = 64
+		defer func() { maxBodyBytes = old }()
+
+		mock := &mockBridge{}
+		handler := handleChatCompletions(mock)
+
+		body := `{"model":"kiro","messages":[{"role":"user","content":"` + strings.Repeat("x", 100) + `"}]}`
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+		w := httptest.NewRecorder()
+		handler(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("status = %d, want 400", w.Code)
+		}
+	})
+}
+
+func TestShowTools(t *testing.T) {
+	t.Run("off by default hides annotations", func(t *testing.T) {
+		old := showToolAnnotations
+		showToolAnnotations = false
+		defer func() { showToolAnnotations = old }()
+
+		mock := &mockBridgeWithToolCalls{}
+		handler := handleChatCompletions(mock)
+
+		body := `{"model":"kiro","messages":[{"role":"user","content":"test"}],"stream":true}`
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+		w := httptest.NewRecorder()
+		handler(w, req)
+
+		if strings.Contains(w.Body.String(), "🔧") {
+			t.Error("tool annotations should not appear when off")
+		}
+	})
+	t.Run("on shows annotations", func(t *testing.T) {
+		old := showToolAnnotations
+		showToolAnnotations = true
+		defer func() { showToolAnnotations = old }()
+
+		mock := &mockBridgeWithToolCalls{}
+		handler := handleChatCompletions(mock)
+
+		body := `{"model":"kiro","messages":[{"role":"user","content":"test"}],"stream":true}`
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+		w := httptest.NewRecorder()
+		handler(w, req)
+
+		if !strings.Contains(w.Body.String(), "🔧") {
+			t.Error("tool annotations should appear when on")
+		}
+	})
+}

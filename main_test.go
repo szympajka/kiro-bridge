@@ -143,3 +143,61 @@ func TestHandlerReturns503WhenBridgeNil(t *testing.T) {
 		t.Errorf("body = %q, want 'bridge not ready'", w.Body.String())
 	}
 }
+
+func TestEnvDefaults(t *testing.T) {
+	t.Run("returns fallback when unset", func(t *testing.T) {
+		if got := env("KIRO_BRIDGE_UNSET_12345", "fallback"); got != "fallback" {
+			t.Errorf("got %q, want %q", got, "fallback")
+		}
+	})
+	t.Run("returns value when set", func(t *testing.T) {
+		t.Setenv("KIRO_BRIDGE_TEST_VAR", "custom")
+		if got := env("KIRO_BRIDGE_TEST_VAR", "default"); got != "custom" {
+			t.Errorf("got %q, want %q", got, "custom")
+		}
+	})
+	t.Run("PORT defaults to 11435", func(t *testing.T) {
+		if got := env("KIRO_BRIDGE_PORT", "11435"); got != "11435" {
+			t.Errorf("got %q", got)
+		}
+	})
+	t.Run("PORT override", func(t *testing.T) {
+		t.Setenv("KIRO_BRIDGE_PORT", "9999")
+		if got := env("KIRO_BRIDGE_PORT", "11435"); got != "9999" {
+			t.Errorf("got %q", got)
+		}
+	})
+	t.Run("CWD defaults to .", func(t *testing.T) {
+		if got := env("KIRO_BRIDGE_CWD", "."); got != "." {
+			t.Errorf("got %q", got)
+		}
+	})
+	t.Run("CWD override", func(t *testing.T) {
+		t.Setenv("KIRO_BRIDGE_CWD", "/tmp")
+		if got := env("KIRO_BRIDGE_CWD", "."); got != "/tmp" {
+			t.Errorf("got %q", got)
+		}
+	})
+	t.Run("CLI_PATH defaults to kiro-cli", func(t *testing.T) {
+		if got := env("KIRO_CLI_PATH", "kiro-cli"); got != "kiro-cli" {
+			t.Errorf("got %q", got)
+		}
+	})
+	t.Run("CLI_PATH override", func(t *testing.T) {
+		t.Setenv("KIRO_CLI_PATH", "/usr/local/bin/kiro-cli")
+		if got := env("KIRO_CLI_PATH", "kiro-cli"); got != "/usr/local/bin/kiro-cli" {
+			t.Errorf("got %q", got)
+		}
+	})
+	t.Run("AGENT defaults to kiro-bridge", func(t *testing.T) {
+		if got := env("KIRO_BRIDGE_AGENT", "kiro-bridge"); got != "kiro-bridge" {
+			t.Errorf("got %q", got)
+		}
+	})
+	t.Run("AGENT override", func(t *testing.T) {
+		t.Setenv("KIRO_BRIDGE_AGENT", "custom-agent")
+		if got := env("KIRO_BRIDGE_AGENT", "kiro-bridge"); got != "custom-agent" {
+			t.Errorf("got %q", got)
+		}
+	})
+}
