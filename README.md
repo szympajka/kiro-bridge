@@ -21,6 +21,19 @@ Client  ──POST /v1/chat/completions──▶  kiro-bridge  ──JSON-RPC/st
 
 > **Tool permissions:** Kiro requests permission for write/edit tools. The bridge rejects these by default. To allow writes, add the tools to `allowedTools` in your agent config so Kiro pre-approves them without asking.
 
+### Protocol support
+
+The bridge translates a subset of each protocol. See [PROTOCOL_SUPPORT.md](PROTOCOL_SUPPORT.md) for the full matrix.
+
+| Area | Supported | Partial | Not supported |
+|------|-----------|---------|---------------|
+| OpenAI request fields | 2 | 3 | 11 |
+| OpenAI message types | 1 | 2 | 2 |
+| ACP agent methods | 4 | — | 3 |
+| ACP session updates | 1 | 2 | 5 |
+| ACP content types | 1 | — | 4 |
+| JSON-RPC 2.0 | 5 | — | 2 |
+
 ## Planned
 
 - Surface tool calls and reasoning steps as streaming events
