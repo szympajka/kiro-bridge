@@ -163,3 +163,15 @@ Legend: ✅ Supported | ⚠️ Partial | ❌ Not supported | 🔄 Custom handlin
 
 1. **Conversation history** — replay messages[] or flatten with full context
 2. **Image passthrough** — Kiro supports it, bridge declared the capability, needs forwarding
+
+## Known limitations
+
+### Client-defined tools not supported
+
+OpenAI's tool protocol is **bidirectional** — model proposes a tool call, client executes it, client returns the result. ACP's tool protocol is **unidirectional** — the agent executes tools internally, the client only observes.
+
+These cannot be cleanly bridged. Client-defined tools (e.g. Raycast's `@calculator`, `@location`) require the model to output structured `tool_calls` that the client executes. Kiro doesn't know about client tools and has no mechanism to invoke them.
+
+Kiro's own tools (read, grep, glob, web_search, etc.) run transparently inside the ACP session. They can be surfaced as text annotations via `KIRO_BRIDGE_SHOW_TOOLS` but cannot be rendered as interactive tool call UI in OpenAI-compatible clients.
+
+**Raycast config:** Set `tools.supported: false` to avoid errors when using tool-dependent extensions.
