@@ -82,6 +82,21 @@ func handleChatCompletions(b Bridge) http.HandlerFunc {
 	}
 }
 
+var stopReasonMap = map[string]string{
+	"end_turn":          "stop",
+	"max_tokens":        "length",
+	"max_turn_requests": "stop",
+	"refusal":           "stop",
+	"cancelled":         "stop",
+}
+
+func mapStopReason(acpReason string) string {
+	if r, ok := stopReasonMap[acpReason]; ok {
+		return r
+	}
+	return "stop"
+}
+
 func writeStreamTerminal(w http.ResponseWriter, flusher http.Flusher, id string, created int64, model, finishReason string) {
 	finalJSON := fmt.Sprintf(`{"id":%q,"object":"chat.completion.chunk","created":%d,"model":%q,"choices":[{"index":0,"delta":{},"finish_reason":%q}]}`, id, created, model, finishReason)
 	fmt.Fprintf(w, "data: %s\n\n", finalJSON)
@@ -101,7 +116,7 @@ func handleStream(w http.ResponseWriter, b Bridge, prompt, id string, created in
 	w.Header().Set("Connection", "keep-alive")
 
 	first := true
-	_, err := b.Prompt(prompt, func(ev PromptEvent) {
+	stopReason, err := b.Prompt(prompt, func(ev PromptEvent) {
 		var delta *ChatMessage
 		switch ev.Type {
 		case EventText:
@@ -144,12 +159,12 @@ func handleStream(w http.ResponseWriter, b Bridge, prompt, id string, created in
 		return
 	}
 
-	writeStreamTerminal(w, flusher, id, created, model, "stop")
+	writeStreamTerminal(w, flusher, id, created, model, mapStopReason(stopReason))
 }
 
 func handleNonStream(w http.ResponseWriter, b Bridge, prompt, id string, created int64, model string) {
 	var full strings.Builder
-	_, err := b.Prompt(prompt, func(ev PromptEvent) {
+	stopReason, err := b.Prompt(prompt, func(ev PromptEvent) {
 		if ev.Type == EventText {
 			full.WriteString(ev.Text)
 		}
@@ -159,7 +174,7 @@ func handleNonStream(w http.ResponseWriter, b Bridge, prompt, id string, created
 		return
 	}
 
-	stop := "stop"
+	fr := mapStopReason(stopReason)
 	resp := ChatCompletionResponse{
 		ID:      id,
 		Object:  "chat.completion",
@@ -168,7 +183,7 @@ func handleNonStream(w http.ResponseWriter, b Bridge, prompt, id string, created
 		Choices: []ChatChoice{{
 			Index:        0,
 			Message:      &ChatMessage{Role: "assistant", Content: ChatContent{Text: full.String()}},
-			FinishReason: &stop,
+			FinishReason: &fr,
 		}},
 	}
 

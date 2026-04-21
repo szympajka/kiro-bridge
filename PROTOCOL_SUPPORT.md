@@ -53,7 +53,7 @@ Legend: ✅ Supported | ⚠️ Partial | ❌ Not supported | 🔄 Custom handlin
 | `model` | 🔄 | Echoed from request. |
 | `choices[].message.content` | ✅ | From `agent_message_chunk`. |
 | `choices[].message.tool_calls` | ❌ | Not mapped. Text annotations behind FF instead. |
-| `choices[].finish_reason` | ⚠️ | Always `"stop"`. ACP stop reasons not mapped. |
+| `choices[].finish_reason` | ✅ | Maps ACP stop reasons: end_turn→stop, max_tokens→length, etc. |
 | `usage` | ❌ | ACP has no token counts. |
 | `system_fingerprint` | ❌ | Not generated. |
 
@@ -128,10 +128,10 @@ Legend: ✅ Supported | ⚠️ Partial | ❌ Not supported | 🔄 Custom handlin
 | ACP Reason | OpenAI Mapping | Status |
 |------------|---------------|--------|
 | `end_turn` | `stop` | ✅ |
-| `max_tokens` | `length` | ❌ Not mapped. |
-| `max_turn_requests` | `stop` | ❌ Not mapped. |
-| `refusal` | `stop` | ❌ Not mapped. |
-| `cancelled` | `stop` | ❌ Not mapped. |
+| `max_tokens` | `length` | ✅ |
+| `max_turn_requests` | `stop` | ✅ |
+| `refusal` | `stop` | ✅ |
+| `cancelled` | `stop` | ✅ |
 
 ### Tool call fields
 
@@ -161,11 +161,10 @@ Legend: ✅ Supported | ⚠️ Partial | ❌ Not supported | 🔄 Custom handlin
 
 ## Actionable gaps (priority order)
 
-1. **Stop reason mapping** — trivial, map ACP reasons to OpenAI finish_reason
-2. **Expose real models** — parse session/new response, serve in `/v1/models`
-3. **Conversation history** — replay messages[] or flatten with full context
-4. **Image passthrough** — Kiro supports it, bridge just needs to forward
-5. **session/cancel on disconnect** — send notification when client drops SSE
-6. **Tool call content parsing** — fix array vs single ContentBlock
-7. **Declare clientCapabilities** — tell agent what bridge supports
-8. **Method not found errors** — respond properly to unhandled agent requests
+1. **Expose real models** — parse session/new response, serve in `/v1/models`
+2. **Conversation history** — replay messages[] or flatten with full context
+3. **Image passthrough** — Kiro supports it, bridge just needs to forward
+4. **session/cancel on disconnect** — send notification when client drops SSE
+5. **Tool call content parsing** — fix array vs single ContentBlock
+6. **Declare clientCapabilities** — tell agent what bridge supports
+7. **Method not found errors** — respond properly to unhandled agent requests

@@ -654,3 +654,41 @@ func TestShowTools(t *testing.T) {
 		}
 	})
 }
+
+func TestMapStopReason(t *testing.T) {
+	t.Run("end_turn maps to stop", func(t *testing.T) {
+		if got := mapStopReason("end_turn"); got != "stop" {
+			t.Errorf("got %q, want %q", got, "stop")
+		}
+	})
+	t.Run("max_tokens maps to length", func(t *testing.T) {
+		if got := mapStopReason("max_tokens"); got != "length" {
+			t.Errorf("got %q, want %q", got, "length")
+		}
+	})
+	t.Run("max_turn_requests maps to stop", func(t *testing.T) {
+		if got := mapStopReason("max_turn_requests"); got != "stop" {
+			t.Errorf("got %q, want %q", got, "stop")
+		}
+	})
+	t.Run("refusal maps to stop", func(t *testing.T) {
+		if got := mapStopReason("refusal"); got != "stop" {
+			t.Errorf("got %q, want %q", got, "stop")
+		}
+	})
+	t.Run("cancelled maps to stop", func(t *testing.T) {
+		if got := mapStopReason("cancelled"); got != "stop" {
+			t.Errorf("got %q, want %q", got, "stop")
+		}
+	})
+	t.Run("unknown maps to stop", func(t *testing.T) {
+		if got := mapStopReason("something_new"); got != "stop" {
+			t.Errorf("got %q, want %q", got, "stop")
+		}
+	})
+	t.Run("empty maps to stop", func(t *testing.T) {
+		if got := mapStopReason(""); got != "stop" {
+			t.Errorf("got %q, want %q", got, "stop")
+		}
+	})
+}
