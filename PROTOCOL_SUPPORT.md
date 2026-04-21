@@ -162,9 +162,10 @@ Legend: ✅ Supported | ⚠️ Partial | ❌ Not supported | 🔄 Custom handlin
 ## Actionable gaps (priority order)
 
 1. **Expose real models** — parse session/new response, serve in `/v1/models`
-2. **Conversation history** — replay messages[] or flatten with full context
-3. **Image passthrough** — Kiro supports it, bridge just needs to forward
-4. **session/cancel on disconnect** — send notification when client drops SSE
-5. **Tool call content parsing** — fix array vs single ContentBlock
-6. **Declare clientCapabilities** — tell agent what bridge supports
-7. **Method not found errors** — respond properly to unhandled agent requests
+2. **Declare clientCapabilities** — tell agent what bridge supports (Zed declares fs, terminal, auth; we send empty `{}`)
+3. **Use `_meta.tool_name` for tool annotations** — currently using `title` ("Finding *.go") instead of actual tool name (`glob`). Zed extracts from `_meta.tool_name`.
+4. **Conversation history** — replay messages[] or flatten with full context
+5. **Image passthrough** — Kiro supports it, bridge just needs to forward
+6. **session/cancel on disconnect** — send notification when client drops SSE. Suppress subsequent abort error (Zed pattern).
+7. **Tool call content parsing** — fix array vs single ContentBlock
+8. **Method not found errors** — respond -32601 for unhandled agent requests (Zed does this)
