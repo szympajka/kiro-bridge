@@ -698,3 +698,54 @@ func TestMapStopReason(t *testing.T) {
 		}
 	})
 }
+
+func TestBuildPromptTextWithReplayHistory(t *testing.T) {
+	old := replayHistory
+	replayHistory = true
+	defer func() { replayHistory = old }()
+
+	t.Run("includes assistant messages", func(t *testing.T) {
+		msgs := []ChatMessage{
+			{Role: "user", Content: ChatContent{Text: "What's 2+2?"}},
+			{Role: "assistant", Content: ChatContent{Text: "4"}},
+			{Role: "user", Content: ChatContent{Text: "Times 3?"}},
+		}
+		got := buildPromptText(msgs)
+		if !strings.Contains(got, "What's 2+2?") {
+			t.Errorf("missing first user message: %q", got)
+		}
+		if !strings.Contains(got, "Assistant: 4") {
+			t.Errorf("missing assistant message: %q", got)
+		}
+		if !strings.Contains(got, "Times 3?") {
+			t.Errorf("missing second user message: %q", got)
+		}
+	})
+
+	t.Run("full conversation with system", func(t *testing.T) {
+		msgs := []ChatMessage{
+			{Role: "system", Content: ChatContent{Text: "Be helpful."}},
+			{Role: "user", Content: ChatContent{Text: "Hi"}},
+			{Role: "assistant", Content: ChatContent{Text: "Hello!"}},
+			{Role: "user", Content: ChatContent{Text: "Bye"}},
+		}
+		got := buildPromptText(msgs)
+		want := "System: Be helpful.\n\nHi\n\nAssistant: Hello!\n\nBye"
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("disabled FF still drops assistant", func(t *testing.T) {
+		replayHistory = false
+		msgs := []ChatMessage{
+			{Role: "user", Content: ChatContent{Text: "hi"}},
+			{Role: "assistant", Content: ChatContent{Text: "hey"}},
+			{Role: "user", Content: ChatContent{Text: "bye"}},
+		}
+		got := buildPromptText(msgs)
+		if strings.Contains(got, "hey") {
+			t.Errorf("assistant message should be dropped when FF off: %q", got)
+		}
+	})
+}

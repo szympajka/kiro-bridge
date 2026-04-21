@@ -11,7 +11,7 @@ Legend: ✅ Supported | ⚠️ Partial | ❌ Not supported | 🔄 Custom handlin
 | Field | Status | Notes |
 |-------|--------|-------|
 | `model` | ⚠️ | Echoed in response. Not forwarded to ACP — Kiro selects model internally. |
-| `messages` | ⚠️ | System + user flattened to single prompt. Assistant/tool messages dropped. No history replay. |
+| `messages` | ⚠️ | System + user + assistant flattened to prompt. Assistant included when `KIRO_BRIDGE_REPLAY_HISTORY` enabled. |
 | `stream` | ✅ | Maps to SSE via `session/update` notifications. |
 | `temperature` | ❌ | No ACP equivalent. Silently ignored. |
 | `top_p` | ❌ | No ACP equivalent. Silently ignored. |
@@ -161,8 +161,7 @@ Legend: ✅ Supported | ⚠️ Partial | ❌ Not supported | 🔄 Custom handlin
 
 ## Actionable gaps (priority order)
 
-1. **Conversation history** — replay messages[] or flatten with full context
-2. **Image passthrough** — Kiro supports it, bridge declared the capability, needs forwarding
+1. **Image passthrough** — Kiro supports it, bridge declared the capability, needs forwarding
 
 ## Known limitations
 

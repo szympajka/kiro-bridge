@@ -20,6 +20,10 @@ func buildPromptText(messages []ChatMessage) string {
 			parts = append(parts, "System: "+m.Content.Text)
 		case "user":
 			parts = append(parts, m.Content.Text)
+		case "assistant":
+			if replayHistory {
+				parts = append(parts, "Assistant: "+m.Content.Text)
+			}
 		}
 	}
 	return strings.Join(parts, "\n\n")
@@ -30,6 +34,7 @@ var completionCounter int64
 var maxBodyBytes int64 = 1 << 20 // 1MB default
 
 var showToolAnnotations = os.Getenv("KIRO_BRIDGE_SHOW_TOOLS") != ""
+var replayHistory = os.Getenv("KIRO_BRIDGE_REPLAY_HISTORY") != ""
 
 func init() {
 	if v := os.Getenv("KIRO_BRIDGE_MAX_BODY"); v != "" {

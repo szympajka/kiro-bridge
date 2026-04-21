@@ -143,6 +143,7 @@ All configuration is via environment variables:
 | `KIRO_BRIDGE_MAX_BODY` | `1048576` | Max request body size in bytes (default 1MB) |
 | `KIRO_BRIDGE_VERBOSE` | unset | Set to enable debug logging |
 | `KIRO_BRIDGE_SHOW_TOOLS` | unset | Set to show tool call annotations in responses (experimental) |
+| `KIRO_BRIDGE_REPLAY_HISTORY` | unset | Set to include assistant messages in prompt for conversation replay (experimental) |
 
 ## Running as a background service
 
