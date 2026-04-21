@@ -85,7 +85,7 @@ Legend: ✅ Supported | ⚠️ Partial | ❌ Not supported | 🔄 Custom handlin
 
 | Notification | Status | Notes |
 |-------------|--------|-------|
-| `session/cancel` | ❌ | Not sent on client disconnect. |
+| `session/cancel` | ✅ | Sends cancel notification. Suppresses subsequent abort error (Zed pattern). |
 
 ### Client methods (agent → client)
 
@@ -143,7 +143,7 @@ Legend: ✅ Supported | ⚠️ Partial | ❌ Not supported | 🔄 Custom handlin
 | `status` | ✅ | Parsed. |
 | `rawInput` | ✅ | Parsed as ToolInput. |
 | `rawOutput` | ❌ | Not surfaced. |
-| `content` (array) | ❌ | Parse fails — expects single ContentBlock, ACP sends array. |
+| `content` (array) | ✅ | Accepts both single ContentBlock and array via json.RawMessage. |
 | `locations` | ❌ | Not surfaced. |
 
 ## JSON-RPC 2.0
@@ -151,18 +151,15 @@ Legend: ✅ Supported | ⚠️ Partial | ❌ Not supported | 🔄 Custom handlin
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Request/response | ✅ | |
-| Notifications (send) | ❌ | Bridge doesn't send `session/cancel`. |
+| Notifications (send) | ✅ | `session/cancel` sent on cancel. |
 | Notifications (receive) | ✅ | `session/update` handled. |
 | Error object (code + message + data) | ✅ | |
 | ID as integer | ✅ | Used for bridge → agent requests. |
 | ID as string | ✅ | Handled for agent → client requests. |
 | Batch requests | ❌ | Not needed for stdio. |
-| Method not found error (-32601) | ❌ | Bridge doesn't send proper error for unhandled methods. |
+| Method not found error (-32601) | ✅ | Responds -32601 for unhandled agent requests. |
 
 ## Actionable gaps (priority order)
 
 1. **Conversation history** — replay messages[] or flatten with full context
-2. **Image passthrough** — Kiro supports it, bridge just needs to forward
-3. **session/cancel on disconnect** — send notification when client drops SSE. Suppress subsequent abort error (Zed pattern).
-4. **Tool call content parsing** — fix array vs single ContentBlock
-5. **Method not found errors** — respond -32601 for unhandled agent requests (Zed does this)
+2. **Image passthrough** — Kiro supports it, bridge declared the capability, needs forwarding

@@ -31,7 +31,8 @@ func (m *mockBridge) Prompt(text string, onEvent func(PromptEvent)) (string, err
 	return "end_turn", nil
 }
 
-func (m *mockBridge) Close() error { return nil }
+func (m *mockBridge) Close() error    { return nil }
+func (m *mockBridge) Cancel()          {}
 func (m *mockBridge) Models() []ModelInfo { return nil }
 
 func TestBuildPromptTextWithContentParts(t *testing.T) {
@@ -534,7 +535,8 @@ func (m *mockBridgeWithToolCalls) Prompt(text string, onEvent func(PromptEvent))
 	return "end_turn", nil
 }
 
-func (m *mockBridgeWithToolCalls) Close() error { return nil }
+func (m *mockBridgeWithToolCalls) Close() error    { return nil }
+func (m *mockBridgeWithToolCalls) Cancel()          {}
 func (m *mockBridgeWithToolCalls) Models() []ModelInfo { return nil }
 
 func TestHandleStreamWithToolCalls(t *testing.T) {

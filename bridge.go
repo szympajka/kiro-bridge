@@ -13,9 +13,15 @@ import (
 
 var execCommand = exec.Command
 
+func mustMarshal(v any) json.RawMessage {
+	data, _ := json.Marshal(v)
+	return data
+}
+
 // Bridge manages the kiro-cli ACP process and provides prompt functionality.
 type Bridge interface {
 	Prompt(text string, onEvent func(PromptEvent)) (string, error)
+	Cancel()
 	Models() []ModelInfo
 	Close() error
 }
@@ -45,17 +51,18 @@ const (
 )
 
 type bridge struct {
-	cmd     *exec.Cmd
-	stdin   io.WriteCloser
-	scanner *bufio.Scanner
-	mu      sync.Mutex
-	nextID  int
-	sessID  string
-	models  []ModelInfo
-	cwd     string
-	cliPath string
-	agent   string
-	version string
+	cmd             *exec.Cmd
+	stdin           io.WriteCloser
+	scanner         *bufio.Scanner
+	mu              sync.Mutex
+	nextID          int
+	sessID          string
+	models          []ModelInfo
+	suppressAbortErr bool
+	cwd             string
+	cliPath         string
+	agent           string
+	version         string
 }
 
 type BridgeConfig struct {
@@ -196,7 +203,14 @@ func (b *bridge) handleIncomingRequest(req *Request) {
 		data = append(data, '\n')
 		b.stdin.Write(data)
 	default:
-		debugf("debug: unhandled incoming request: %s", req.Method)
+		debugf("debug: method not found: %s", req.Method)
+		data, err := newErrorResponse(req.ID, -32601, "Method not found")
+		if err != nil {
+			debugf("debug: failed to marshal error response: %v", err)
+			return
+		}
+		data = append(data, '\n')
+		b.stdin.Write(data)
 	}
 }
 
@@ -305,8 +319,8 @@ func (b *bridge) Prompt(text string, onEvent func(PromptEvent)) (string, error) 
 		}
 		switch update.SessionUpdate {
 		case "agent_message_chunk":
-			if update.Content.Text != "" {
-				onEvent(PromptEvent{Type: EventText, Text: update.Content.Text})
+			if text := update.ContentText(); text != "" {
+				onEvent(PromptEvent{Type: EventText, Text: text})
 			}
 		case "tool_call":
 			name := update.Title
@@ -346,17 +360,42 @@ func (b *bridge) Prompt(text string, onEvent func(PromptEvent)) (string, error) 
 		}
 	})
 	if err != nil {
+		if b.suppressAbortErr {
+			b.suppressAbortErr = false
+			return "cancelled", nil
+		}
 		return "", err
 	}
 	if resp.Error != nil {
+		if b.suppressAbortErr {
+			b.suppressAbortErr = false
+			return "cancelled", nil
+		}
 		return "", fmt.Errorf("prompt error: %w", resp.Error)
 	}
+	b.suppressAbortErr = false
 
 	var result SessionPromptResult
 	if err := json.Unmarshal(resp.Result, &result); err != nil {
 		return result.StopReason, nil
 	}
 	return result.StopReason, nil
+}
+
+func (b *bridge) Cancel() {
+	b.suppressAbortErr = true
+	data, err := json.Marshal(Notification{
+		JSONRPC: "2.0",
+		Method:  "session/cancel",
+		Params:  mustMarshal(SessionCancelParams{SessionID: b.sessID}),
+	})
+	if err != nil {
+		debugf("debug: failed to marshal cancel: %v", err)
+		return
+	}
+	debugf("debug: acp >>> %s", data)
+	data = append(data, '\n')
+	b.stdin.Write(data)
 }
 
 func (b *bridge) Models() []ModelInfo { return b.models }

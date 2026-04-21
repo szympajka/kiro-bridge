@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNewBridgeFailsWhenSetModeFails(t *testing.T) {
@@ -110,6 +111,74 @@ func TestBridgeHelperProcess(t *testing.T) {
 				"result":  map[string]any{},
 			}
 		case "session/prompt":
+			if mode == "slow-prompt" {
+				// Send first chunk
+				chunk := map[string]any{
+					"jsonrpc": "2.0",
+					"method":  "session/update",
+					"params": map[string]any{
+						"sessionId": "sess-1",
+						"update": map[string]any{
+							"sessionUpdate": "agent_message_chunk",
+							"content":       map[string]any{"type": "text", "text": "working..."},
+						},
+					},
+				}
+				d, _ := json.Marshal(chunk)
+				writer.Write(append(d, '\n'))
+				writer.Flush()
+
+				// Wait for cancel notification from bridge
+				if scanner.Scan() {
+					// Got cancel — respond with cancelled stop reason
+					resp = map[string]any{
+						"jsonrpc": "2.0",
+						"id":      req.ID,
+						"result":  map[string]any{"stopReason": "cancelled"},
+					}
+				}
+				break
+			}
+			if mode == "unknown-method" {
+				// Send an unknown agent→client request
+				unknownReq := map[string]any{
+					"jsonrpc": "2.0",
+					"id":      "unknown-1",
+					"method":  "fs/read_text_file",
+					"params":  map[string]any{"path": "/tmp/test.txt"},
+				}
+				d, _ := json.Marshal(unknownReq)
+				writer.Write(append(d, '\n'))
+				writer.Flush()
+
+				// Wait for bridge to respond
+				if !scanner.Scan() {
+					os.Exit(2)
+				}
+
+				// Send text chunk and prompt response
+				chunk := map[string]any{
+					"jsonrpc": "2.0",
+					"method":  "session/update",
+					"params": map[string]any{
+						"sessionId": "sess-1",
+						"update": map[string]any{
+							"sessionUpdate": "agent_message_chunk",
+							"content":       map[string]any{"type": "text", "text": "ok"},
+						},
+					},
+				}
+				d, _ = json.Marshal(chunk)
+				writer.Write(append(d, '\n'))
+				writer.Flush()
+
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req.ID,
+					"result":  map[string]any{"stopReason": "end_turn"},
+				}
+				break
+			}
 			if mode == "tool-call-with-meta" {
 				toolCall := map[string]any{
 					"jsonrpc": "2.0",
@@ -508,5 +577,82 @@ func TestBridgeExtractsToolNameFromMeta(t *testing.T) {
 	}
 	if toolNames[0] != "glob" {
 		t.Errorf("tool name = %q, want %q (from _meta.tool_name)", toolNames[0], "glob")
+	}
+}
+
+func TestBridgeRespondsMethodNotFound(t *testing.T) {
+	oldExecCommand := execCommand
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestBridgeHelperProcess", "--"}
+		cs = append(cs, args...)
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = append(os.Environ(),
+			"GO_WANT_HELPER_PROCESS=1",
+			"KIRO_BRIDGE_HELPER_MODE=unknown-method",
+		)
+		return cmd
+	}
+	defer func() { execCommand = oldExecCommand }()
+
+	b, err := NewBridge(BridgeConfig{CLIPath: "kiro-cli", CWD: ".", Agent: "kiro-bridge", Version: "test"})
+	if err != nil {
+		t.Fatalf("NewBridge: %v", err)
+	}
+	defer b.Close()
+
+	// Prompt should complete — the unknown method gets a -32601 response, unblocking the agent
+	var chunks []string
+	_, err = b.Prompt("test", func(ev PromptEvent) {
+		if ev.Type == EventText {
+			chunks = append(chunks, ev.Text)
+		}
+	})
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	if len(chunks) == 0 {
+		t.Fatal("expected at least one chunk")
+	}
+}
+
+func TestBridgeSendsCancelNotification(t *testing.T) {
+	oldExecCommand := execCommand
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestBridgeHelperProcess", "--"}
+		cs = append(cs, args...)
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = append(os.Environ(),
+			"GO_WANT_HELPER_PROCESS=1",
+			"KIRO_BRIDGE_HELPER_MODE=slow-prompt",
+		)
+		return cmd
+	}
+	defer func() { execCommand = oldExecCommand }()
+
+	b, err := NewBridge(BridgeConfig{CLIPath: "kiro-cli", CWD: ".", Agent: "kiro-bridge", Version: "test"})
+	if err != nil {
+		t.Fatalf("NewBridge: %v", err)
+	}
+	defer b.Close()
+
+	// Start prompt in goroutine, cancel after first chunk
+	done := make(chan error, 1)
+	go func() {
+		_, err := b.Prompt("slow task", func(ev PromptEvent) {
+			if ev.Type == EventText {
+				// Cancel after receiving first chunk
+				b.Cancel()
+			}
+		})
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Prompt should complete without error after cancel, got: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Prompt did not complete after cancel")
 	}
 }

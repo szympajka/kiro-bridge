@@ -75,8 +75,8 @@ func TestSessionUpdateParsing(t *testing.T) {
 			if su.SessionUpdate != tt.wantUpdate {
 				t.Errorf("sessionUpdate = %q, want %q", su.SessionUpdate, tt.wantUpdate)
 			}
-			if tt.wantText != "" && su.Content.Text != tt.wantText {
-				t.Errorf("content.text = %q, want %q", su.Content.Text, tt.wantText)
+			if tt.wantText != "" && su.ContentText() != tt.wantText {
+				t.Errorf("content.text = %q, want %q", su.ContentText(), tt.wantText)
 			}
 		})
 	}
@@ -323,5 +323,18 @@ func TestNewResponseMarshal(t *testing.T) {
 	}
 	if !strings.Contains(s, `"jsonrpc":"2.0"`) {
 		t.Errorf("missing jsonrpc: %s", s)
+	}
+}
+
+func TestSessionUpdateToolCallContentArray(t *testing.T) {
+	// ACP tool_call sends content as an array, not a single ContentBlock
+	input := `{"sessionUpdate":"tool_call","toolCallId":"call_1","title":"Creating file","content":[{"type":"diff","path":"/tmp/test.txt","oldText":null,"newText":"hello\n"}]}`
+	var su SessionUpdate
+	err := json.Unmarshal([]byte(input), &su)
+	if err != nil {
+		t.Fatalf("should parse without error, got: %v", err)
+	}
+	if su.ToolCallID != "call_1" {
+		t.Errorf("toolCallId = %q, want %q", su.ToolCallID, "call_1")
 	}
 }

@@ -184,17 +184,34 @@ type SessionSetModeParams struct {
 	ModeID    string `json:"modeId"`
 }
 
+type SessionCancelParams struct {
+	SessionID string `json:"sessionId"`
+}
+
 type SessionUpdateParams struct {
 	SessionID string          `json:"sessionId"`
 	Update    json.RawMessage `json:"update"`
 }
 
 type SessionUpdate struct {
-	SessionUpdate string       `json:"sessionUpdate"`
-	Content       ContentBlock `json:"content,omitempty"`
-	ToolCallID    string       `json:"toolCallId,omitempty"`
-	Title         string       `json:"title,omitempty"`
-	Status        string       `json:"status,omitempty"`
+	SessionUpdate string          `json:"sessionUpdate"`
+	Content       json.RawMessage `json:"content,omitempty"`
+	ToolCallID    string          `json:"toolCallId,omitempty"`
+	Title         string          `json:"title,omitempty"`
+	Status        string          `json:"status,omitempty"`
+}
+
+// ContentText extracts text from a content field that may be a single ContentBlock or an array.
+func (su *SessionUpdate) ContentText() string {
+	if len(su.Content) == 0 {
+		return ""
+	}
+	// Try single ContentBlock
+	var block ContentBlock
+	if err := json.Unmarshal(su.Content, &block); err == nil && block.Text != "" {
+		return block.Text
+	}
+	return ""
 }
 
 func newRequest(id int, method string, params any) ([]byte, error) {
@@ -207,4 +224,8 @@ func newRequest(id int, method string, params any) ([]byte, error) {
 
 func newResponse(id RPCID, result json.RawMessage) ([]byte, error) {
 	return json.Marshal(Response{JSONRPC: "2.0", ID: id, Result: result})
+}
+
+func newErrorResponse(id RPCID, code int, message string) ([]byte, error) {
+	return json.Marshal(Response{JSONRPC: "2.0", ID: id, Error: &RPCError{Code: code, Message: message}})
 }
