@@ -20,7 +20,7 @@ func mustMarshal(v any) json.RawMessage {
 
 // Bridge manages the kiro-cli ACP process and provides prompt functionality.
 type Bridge interface {
-	Prompt(text string, onEvent func(PromptEvent)) (string, error)
+	Prompt(blocks []ContentBlock, onEvent func(PromptEvent)) (string, error)
 	Cancel()
 	Models() []ModelInfo
 	Close() error
@@ -288,7 +288,7 @@ func (b *bridge) setMode() error {
 	return nil
 }
 
-func (b *bridge) Prompt(text string, onEvent func(PromptEvent)) (string, error) {
+func (b *bridge) Prompt(blocks []ContentBlock, onEvent func(PromptEvent)) (string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -297,7 +297,7 @@ func (b *bridge) Prompt(text string, onEvent func(PromptEvent)) (string, error) 
 
 	err := b.send(id, "session/prompt", SessionPromptParams{
 		SessionID: b.sessID,
-		Prompt:    []ContentBlock{{Type: "text", Text: text}},
+		Prompt:    blocks,
 	})
 	if err != nil {
 		return "", err

@@ -29,12 +29,26 @@ func buildPromptText(messages []ChatMessage) string {
 	return strings.Join(parts, "\n\n")
 }
 
+func buildPromptBlocks(messages []ChatMessage) []ContentBlock {
+	text := buildPromptText(messages)
+	blocks := []ContentBlock{{Type: "text", Text: text}}
+	if enableImages {
+		for _, m := range messages {
+			for _, img := range m.Content.Images {
+				blocks = append(blocks, ContentBlock{Type: "image", MimeType: img.MimeType, Data: img.Data})
+			}
+		}
+	}
+	return blocks
+}
+
 var completionCounter int64
 
 var maxBodyBytes int64 = 1 << 20 // 1MB default
 
 var showToolAnnotations = os.Getenv("KIRO_BRIDGE_SHOW_TOOLS") != ""
 var replayHistory = os.Getenv("KIRO_BRIDGE_REPLAY_HISTORY") != ""
+var enableImages = os.Getenv("KIRO_BRIDGE_ENABLE_IMAGES") != ""
 
 func init() {
 	if v := os.Getenv("KIRO_BRIDGE_MAX_BODY"); v != "" {
@@ -70,6 +84,7 @@ func handleChatCompletions(b Bridge) http.HandlerFunc {
 		}
 
 		promptText := buildPromptText(req.Messages)
+		promptBlocks := buildPromptBlocks(req.Messages)
 		completionID := newCompletionID()
 		created := time.Now().Unix()
 		model := req.Model
@@ -80,9 +95,9 @@ func handleChatCompletions(b Bridge) http.HandlerFunc {
 		debugf("prompt: stream=%v model=%q len=%d", req.Stream, model, len(promptText))
 
 		if req.Stream {
-			handleStream(w, b, promptText, completionID, created, model)
+			handleStream(w, b, promptBlocks, completionID, created, model)
 		} else {
-			handleNonStream(w, b, promptText, completionID, created, model)
+			handleNonStream(w, b, promptBlocks, completionID, created, model)
 		}
 	}
 }
@@ -109,7 +124,7 @@ func writeStreamTerminal(w http.ResponseWriter, flusher http.Flusher, id string,
 	flusher.Flush()
 }
 
-func handleStream(w http.ResponseWriter, b Bridge, prompt, id string, created int64, model string) {
+func handleStream(w http.ResponseWriter, b Bridge, prompt []ContentBlock, id string, created int64, model string) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
@@ -167,7 +182,7 @@ func handleStream(w http.ResponseWriter, b Bridge, prompt, id string, created in
 	writeStreamTerminal(w, flusher, id, created, model, mapStopReason(stopReason))
 }
 
-func handleNonStream(w http.ResponseWriter, b Bridge, prompt, id string, created int64, model string) {
+func handleNonStream(w http.ResponseWriter, b Bridge, prompt []ContentBlock, id string, created int64, model string) {
 	var full strings.Builder
 	stopReason, err := b.Prompt(prompt, func(ev PromptEvent) {
 		if ev.Type == EventText {

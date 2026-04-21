@@ -40,7 +40,7 @@ Legend: ✅ Supported | ⚠️ Partial | ❌ Not supported | 🔄 Custom handlin
 | Type | Status | Notes |
 |------|--------|-------|
 | `text` | ✅ | Direct mapping to ACP text ContentBlock. |
-| `image_url` | ❌ | Kiro declares `image: true` but bridge doesn't pass through yet. |
+| `image_url` | ⚠️ | Parsed and forwarded as ACP image block when `KIRO_BRIDGE_ENABLE_IMAGES` set. |
 | `input_audio` | ❌ | Kiro declares `audio: false`. |
 
 ### Response fields
@@ -161,7 +161,7 @@ Legend: ✅ Supported | ⚠️ Partial | ❌ Not supported | 🔄 Custom handlin
 
 ## Actionable gaps (priority order)
 
-1. **Image passthrough** — Kiro supports it, bridge declared the capability, needs forwarding
+No remaining protocol gaps. All translatable features are implemented (some behind feature flags).
 
 ## Known limitations
 

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // OpenAI Chat Completions API types
@@ -33,11 +34,18 @@ type ToolCallFunction struct {
 
 // ChatContent handles both "content": "string" and "content": [{"type":"text","text":"..."}]
 type ChatContent struct {
-	Text string
+	Text   string
+	Images []ImageContent
+}
+
+type ImageContent struct {
+	MimeType string
+	Data     string
 }
 
 func (c *ChatContent) UnmarshalJSON(data []byte) error {
 	c.Text = ""
+	c.Images = nil
 
 	if string(data) == "null" {
 		return nil
@@ -51,19 +59,46 @@ func (c *ChatContent) UnmarshalJSON(data []byte) error {
 	}
 	// Try array of content parts
 	var parts []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
+		Type     string `json:"type"`
+		Text     string `json:"text"`
+		ImageURL *struct {
+			URL string `json:"url"`
+		} `json:"image_url"`
 	}
 	if err := json.Unmarshal(data, &parts); err == nil {
 		for _, p := range parts {
-			if p.Type == "text" {
+			switch p.Type {
+			case "text":
 				c.Text += p.Text
+			case "image_url":
+				if p.ImageURL != nil {
+					mime, b64 := parseDataURI(p.ImageURL.URL)
+					if b64 != "" {
+						c.Images = append(c.Images, ImageContent{MimeType: mime, Data: b64})
+					}
+				}
 			}
 		}
 		return nil
 	}
 
 	return fmt.Errorf("unsupported content format")
+}
+
+func parseDataURI(uri string) (mimeType, data string) {
+	// data:image/png;base64,iVBOR...
+	if !strings.HasPrefix(uri, "data:") {
+		return "", ""
+	}
+	uri = uri[5:] // strip "data:"
+	idx := strings.Index(uri, ",")
+	if idx < 0 {
+		return "", ""
+	}
+	meta := uri[:idx]
+	data = uri[idx+1:]
+	meta = strings.TrimSuffix(meta, ";base64")
+	return meta, data
 }
 
 func (c ChatContent) MarshalJSON() ([]byte, error) {

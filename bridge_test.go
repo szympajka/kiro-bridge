@@ -411,7 +411,7 @@ func TestBridgeRejectsPermissionRequest(t *testing.T) {
 	defer b.Close()
 
 	var chunks []string
-	_, err = b.Prompt("create a file", func(ev PromptEvent) {
+	_, err = b.Prompt([]ContentBlock{{Type: "text", Text: "create a file"}}, func(ev PromptEvent) {
 		if ev.Type == EventText {
 			chunks = append(chunks, ev.Text)
 		}
@@ -451,7 +451,7 @@ func TestBridgeEmitsToolCallEvents(t *testing.T) {
 	defer b.Close()
 
 	var events []PromptEvent
-	_, err = b.Prompt("list files", func(ev PromptEvent) {
+	_, err = b.Prompt([]ContentBlock{{Type: "text", Text: "list files"}}, func(ev PromptEvent) {
 		events = append(events, ev)
 	})
 	if err != nil {
@@ -567,7 +567,7 @@ func TestBridgeExtractsToolNameFromMeta(t *testing.T) {
 	defer b.Close()
 
 	var toolNames []string
-	b.Prompt("test", func(ev PromptEvent) {
+	b.Prompt([]ContentBlock{{Type: "text", Text: "test"}}, func(ev PromptEvent) {
 		if ev.Type == EventToolCall {
 			toolNames = append(toolNames, ev.ToolName)
 		}
@@ -602,7 +602,7 @@ func TestBridgeRespondsMethodNotFound(t *testing.T) {
 
 	// Prompt should complete — the unknown method gets a -32601 response, unblocking the agent
 	var chunks []string
-	_, err = b.Prompt("test", func(ev PromptEvent) {
+	_, err = b.Prompt([]ContentBlock{{Type: "text", Text: "test"}}, func(ev PromptEvent) {
 		if ev.Type == EventText {
 			chunks = append(chunks, ev.Text)
 		}
@@ -638,7 +638,7 @@ func TestBridgeSendsCancelNotification(t *testing.T) {
 	// Start prompt in goroutine, cancel after first chunk
 	done := make(chan error, 1)
 	go func() {
-		_, err := b.Prompt("slow task", func(ev PromptEvent) {
+		_, err := b.Prompt([]ContentBlock{{Type: "text", Text: "slow task"}}, func(ev PromptEvent) {
 			if ev.Type == EventText {
 				// Cancel after receiving first chunk
 				b.Cancel()

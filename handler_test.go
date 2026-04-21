@@ -17,8 +17,10 @@ type mockBridge struct {
 	promptErrAfterChunks bool
 }
 
-func (m *mockBridge) Prompt(text string, onEvent func(PromptEvent)) (string, error) {
-	m.gotText = text
+func (m *mockBridge) Prompt(blocks []ContentBlock, onEvent func(PromptEvent)) (string, error) {
+	if len(blocks) > 0 {
+		m.gotText = blocks[0].Text
+	}
 	if m.promptErr != nil && !m.promptErrAfterChunks {
 		return "", m.promptErr
 	}
@@ -518,8 +520,10 @@ type mockBridgeWithToolCalls struct {
 	gotText string
 }
 
-func (m *mockBridgeWithToolCalls) Prompt(text string, onEvent func(PromptEvent)) (string, error) {
-	m.gotText = text
+func (m *mockBridgeWithToolCalls) Prompt(blocks []ContentBlock, onEvent func(PromptEvent)) (string, error) {
+	if len(blocks) > 0 {
+		m.gotText = blocks[0].Text
+	}
 	onEvent(PromptEvent{
 		Type:       EventToolCall,
 		ToolCallID: "call_1",
@@ -748,4 +752,70 @@ func TestBuildPromptTextWithReplayHistory(t *testing.T) {
 			t.Errorf("assistant message should be dropped when FF off: %q", got)
 		}
 	})
+}
+
+func TestChatContentParsesImageURL(t *testing.T) {
+	input := `[{"type":"text","text":"What is this?"},{"type":"image_url","image_url":{"url":"data:image/png;base64,abc123"}}]`
+	var c ChatContent
+	if err := json.Unmarshal([]byte(input), &c); err != nil {
+		t.Fatal(err)
+	}
+	if c.Text != "What is this?" {
+		t.Errorf("text = %q, want %q", c.Text, "What is this?")
+	}
+	if len(c.Images) != 1 {
+		t.Fatalf("images = %d, want 1", len(c.Images))
+	}
+	if c.Images[0].MimeType != "image/png" {
+		t.Errorf("mime = %q, want %q", c.Images[0].MimeType, "image/png")
+	}
+	if c.Images[0].Data != "abc123" {
+		t.Errorf("data = %q, want %q", c.Images[0].Data, "abc123")
+	}
+}
+
+func TestBuildPromptBlocks(t *testing.T) {
+	old := enableImages
+	enableImages = true
+	defer func() { enableImages = old }()
+
+	msgs := []ChatMessage{
+		{Role: "user", Content: ChatContent{
+			Text:   "What is this?",
+			Images: []ImageContent{{MimeType: "image/png", Data: "abc123"}},
+		}},
+	}
+	blocks := buildPromptBlocks(msgs)
+	if len(blocks) != 2 {
+		t.Fatalf("got %d blocks, want 2", len(blocks))
+	}
+	if blocks[0].Type != "text" {
+		t.Errorf("blocks[0].type = %q, want text", blocks[0].Type)
+	}
+	if blocks[1].Type != "image" {
+		t.Errorf("blocks[1].type = %q, want image", blocks[1].Type)
+	}
+	if blocks[1].MimeType != "image/png" {
+		t.Errorf("blocks[1].mimeType = %q", blocks[1].MimeType)
+	}
+}
+
+func TestBuildPromptBlocksImagesDisabled(t *testing.T) {
+	old := enableImages
+	enableImages = false
+	defer func() { enableImages = old }()
+
+	msgs := []ChatMessage{
+		{Role: "user", Content: ChatContent{
+			Text:   "What is this?",
+			Images: []ImageContent{{MimeType: "image/png", Data: "abc123"}},
+		}},
+	}
+	blocks := buildPromptBlocks(msgs)
+	// Should only have text, no image blocks
+	for _, b := range blocks {
+		if b.Type == "image" {
+			t.Error("image blocks should not be included when FF disabled")
+		}
+	}
 }

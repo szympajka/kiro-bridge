@@ -144,6 +144,7 @@ All configuration is via environment variables:
 | `KIRO_BRIDGE_VERBOSE` | unset | Set to enable debug logging |
 | `KIRO_BRIDGE_SHOW_TOOLS` | unset | Set to show tool call annotations in responses (experimental) |
 | `KIRO_BRIDGE_REPLAY_HISTORY` | unset | Set to include assistant messages in prompt for conversation replay (experimental) |
+| `KIRO_BRIDGE_ENABLE_IMAGES` | unset | Set to forward image content from OpenAI requests to ACP (experimental) |
 
 ## Running as a background service
 
