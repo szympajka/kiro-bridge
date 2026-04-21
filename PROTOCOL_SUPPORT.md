@@ -73,9 +73,9 @@ Legend: ✅ Supported | ⚠️ Partial | ❌ Not supported | 🔄 Custom handlin
 
 | Method | Status | Notes |
 |--------|--------|-------|
-| `initialize` | ✅ | Sends protocol version + client info. Capabilities declared as empty. |
+| `initialize` | ✅ | Declares promptCapabilities.image. |
 | `authenticate` | ❌ | Not needed — kiro-cli handles auth. |
-| `session/new` | ✅ | Creates session with CWD. Response parsed for sessionId only — modes/models not used. |
+| `session/new` | ✅ | Creates session with CWD. Parses models from response. |
 | `session/load` | ❌ | Not implemented. Kiro declares `loadSession: true`. |
 | `session/prompt` | ✅ | Text content blocks only. |
 | `session/set_mode` | ✅ | Activates agent config. |
@@ -161,11 +161,8 @@ Legend: ✅ Supported | ⚠️ Partial | ❌ Not supported | 🔄 Custom handlin
 
 ## Actionable gaps (priority order)
 
-1. **Expose real models** — parse session/new response, serve in `/v1/models`
-2. **Declare clientCapabilities** — tell agent what bridge supports (Zed declares fs, terminal, auth; we send empty `{}`)
-3. **Use `_meta.tool_name` for tool annotations** — currently using `title` ("Finding *.go") instead of actual tool name (`glob`). Zed extracts from `_meta.tool_name`.
-4. **Conversation history** — replay messages[] or flatten with full context
-5. **Image passthrough** — Kiro supports it, bridge just needs to forward
-6. **session/cancel on disconnect** — send notification when client drops SSE. Suppress subsequent abort error (Zed pattern).
-7. **Tool call content parsing** — fix array vs single ContentBlock
-8. **Method not found errors** — respond -32601 for unhandled agent requests (Zed does this)
+1. **Conversation history** — replay messages[] or flatten with full context
+2. **Image passthrough** — Kiro supports it, bridge just needs to forward
+3. **session/cancel on disconnect** — send notification when client drops SSE. Suppress subsequent abort error (Zed pattern).
+4. **Tool call content parsing** — fix array vs single ContentBlock
+5. **Method not found errors** — respond -32601 for unhandled agent requests (Zed does this)

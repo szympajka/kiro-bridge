@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -101,7 +102,16 @@ func main() {
 		}
 		handleChatCompletions(b)(w, r)
 	})
-	mux.HandleFunc("/v1/models", handleModels)
+	mux.HandleFunc("/v1/models", func(w http.ResponseWriter, r *http.Request) {
+		b := holder.Get()
+		if b == nil {
+			// Return fallback model when bridge not ready
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"object":"list","data":[{"id":"kiro","object":"model","owned_by":"kiro-bridge"}]}`))
+			return
+		}
+		handleModels(b)(w, r)
+	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		debugf("request: %s %s", r.Method, r.URL.Path)
 		http.NotFound(w, r)
@@ -128,13 +138,29 @@ func main() {
 	log.Println("done")
 }
 
-func handleModels(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
+func handleModels(b Bridge) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		models := b.Models()
+		if len(models) == 0 {
+			w.Write([]byte(`{"object":"list","data":[{"id":"kiro","object":"model","owned_by":"kiro-bridge"}]}`))
+			return
+		}
+		type openaiModel struct {
+			ID      string `json:"id"`
+			Object  string `json:"object"`
+			OwnedBy string `json:"owned_by"`
+		}
+		var data []openaiModel
+		for _, m := range models {
+			data = append(data, openaiModel{ID: m.ID, Object: "model", OwnedBy: "kiro-bridge"})
+		}
+		json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": data})
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"object":"list","data":[{"id":"kiro","object":"model","owned_by":"kiro-bridge"}]}`))
 }
 
 var verboseLog = os.Getenv("KIRO_BRIDGE_VERBOSE") != ""

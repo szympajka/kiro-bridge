@@ -32,6 +32,7 @@ func (m *mockBridge) Prompt(text string, onEvent func(PromptEvent)) (string, err
 }
 
 func (m *mockBridge) Close() error { return nil }
+func (m *mockBridge) Models() []ModelInfo { return nil }
 
 func TestBuildPromptTextWithContentParts(t *testing.T) {
 	body := `{"messages":[{"role":"system","content":"Be helpful."},{"role":"user","content":[{"type":"text","text":"hello"}]}],"model":"kiro","stream":true}`
@@ -394,9 +395,10 @@ func TestHandleInvalidContentShape(t *testing.T) {
 }
 
 func TestHandleModelsGET(t *testing.T) {
+	mock := &mockBridge{}
 	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 	w := httptest.NewRecorder()
-	handleModels(w, req)
+	handleModels(mock)(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200", w.Code)
@@ -407,9 +409,10 @@ func TestHandleModelsGET(t *testing.T) {
 }
 
 func TestHandleModelsRejectsPost(t *testing.T) {
+	mock := &mockBridge{}
 	req := httptest.NewRequest(http.MethodPost, "/v1/models", nil)
 	w := httptest.NewRecorder()
-	handleModels(w, req)
+	handleModels(mock)(w, req)
 
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("status = %d, want 405", w.Code)
@@ -532,6 +535,7 @@ func (m *mockBridgeWithToolCalls) Prompt(text string, onEvent func(PromptEvent))
 }
 
 func (m *mockBridgeWithToolCalls) Close() error { return nil }
+func (m *mockBridgeWithToolCalls) Models() []ModelInfo { return nil }
 
 func TestHandleStreamWithToolCalls(t *testing.T) {
 	old := showToolAnnotations

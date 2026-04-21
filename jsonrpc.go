@@ -116,9 +116,17 @@ type Notification struct {
 // ACP param/result types
 
 type InitializeParams struct {
-	ProtocolVersion    int        `json:"protocolVersion"`
-	ClientCapabilities struct{}   `json:"clientCapabilities"`
-	ClientInfo         ClientInfo `json:"clientInfo"`
+	ProtocolVersion    int                `json:"protocolVersion"`
+	ClientCapabilities ClientCapabilities `json:"clientCapabilities"`
+	ClientInfo         ClientInfo         `json:"clientInfo"`
+}
+
+type ClientCapabilities struct {
+	PromptCapabilities *PromptCapabilities `json:"promptCapabilities,omitempty"`
+}
+
+type PromptCapabilities struct {
+	Image bool `json:"image"`
 }
 
 type ClientInfo struct {
@@ -142,7 +150,19 @@ func NewSessionNewParams(cwd string) SessionNewParams {
 }
 
 type SessionNewResult struct {
-	SessionID string `json:"sessionId"`
+	SessionID string           `json:"sessionId"`
+	Models    *SessionModels   `json:"models,omitempty"`
+}
+
+type SessionModels struct {
+	CurrentModelID  string         `json:"currentModelId"`
+	AvailableModels []SessionModel `json:"availableModels"`
+}
+
+type SessionModel struct {
+	ModelID     string `json:"modelId"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
 type SessionPromptParams struct {

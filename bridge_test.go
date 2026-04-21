@@ -68,6 +68,23 @@ func TestBridgeHelperProcess(t *testing.T) {
 				},
 			}
 		case "session/new":
+			if mode == "with-models" {
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req.ID,
+					"result": map[string]any{
+						"sessionId": "sess-1",
+						"models": map[string]any{
+							"currentModelId": "claude-sonnet-4",
+							"availableModels": []map[string]any{
+								{"modelId": "auto", "name": "auto", "description": "Auto"},
+								{"modelId": "claude-sonnet-4", "name": "claude-sonnet-4", "description": "Sonnet 4"},
+							},
+						},
+					},
+				}
+				break
+			}
 			resp = map[string]any{
 				"jsonrpc": "2.0",
 				"id":      req.ID,
@@ -93,6 +110,46 @@ func TestBridgeHelperProcess(t *testing.T) {
 				"result":  map[string]any{},
 			}
 		case "session/prompt":
+			if mode == "tool-call-with-meta" {
+				toolCall := map[string]any{
+					"jsonrpc": "2.0",
+					"method":  "session/update",
+					"params": map[string]any{
+						"sessionId": "sess-1",
+						"update": map[string]any{
+							"sessionUpdate": "tool_call",
+							"toolCallId":    "call_meta",
+							"title":         "Finding *.go",
+							"kind":          "search",
+							"_meta":         map[string]any{"tool_name": "glob"},
+						},
+					},
+				}
+				d, _ := json.Marshal(toolCall)
+				writer.Write(append(d, '\n'))
+
+				chunk := map[string]any{
+					"jsonrpc": "2.0",
+					"method":  "session/update",
+					"params": map[string]any{
+						"sessionId": "sess-1",
+						"update": map[string]any{
+							"sessionUpdate": "agent_message_chunk",
+							"content":       map[string]any{"type": "text", "text": "done"},
+						},
+					},
+				}
+				d, _ = json.Marshal(chunk)
+				writer.Write(append(d, '\n'))
+				writer.Flush()
+
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req.ID,
+					"result":  map[string]any{"stopReason": "end_turn"},
+				}
+				break
+			}
 			if mode == "tool-call" {
 				// Send tool_call notification
 				toolCall := map[string]any{
@@ -364,5 +421,92 @@ func TestBridgeEmitsToolCallEvents(t *testing.T) {
 	}
 	if !hasText {
 		t.Error("missing text event")
+	}
+}
+
+func TestHandleModelsReturnsRealModels(t *testing.T) {
+	oldExecCommand := execCommand
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestBridgeHelperProcess", "--"}
+		cs = append(cs, args...)
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = append(os.Environ(),
+			"GO_WANT_HELPER_PROCESS=1",
+			"KIRO_BRIDGE_HELPER_MODE=with-models",
+		)
+		return cmd
+	}
+	defer func() { execCommand = oldExecCommand }()
+
+	b, err := NewBridge(BridgeConfig{CLIPath: "kiro-cli", CWD: ".", Agent: "kiro-bridge", Version: "test"})
+	if err != nil {
+		t.Fatalf("NewBridge: %v", err)
+	}
+	defer b.Close()
+
+	models := b.Models()
+	if len(models) != 2 {
+		t.Fatalf("got %d models, want 2", len(models))
+	}
+	if models[0].ID != "auto" {
+		t.Errorf("models[0].ID = %q, want %q", models[0].ID, "auto")
+	}
+	if models[1].ID != "claude-sonnet-4" {
+		t.Errorf("models[1].ID = %q, want %q", models[1].ID, "claude-sonnet-4")
+	}
+}
+
+func TestInitializeParamsIncludesCapabilities(t *testing.T) {
+	params := InitializeParams{
+		ProtocolVersion: 1,
+		ClientCapabilities: ClientCapabilities{
+			PromptCapabilities: &PromptCapabilities{Image: true},
+		},
+		ClientInfo: ClientInfo{Name: "kiro-bridge", Title: "Kiro Bridge", Version: "test"},
+	}
+	data, err := json.Marshal(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(data)
+	if !strings.Contains(s, `"image":true`) {
+		t.Errorf("should declare image support: %s", s)
+	}
+	if !strings.Contains(s, `"promptCapabilities"`) {
+		t.Errorf("should have promptCapabilities: %s", s)
+	}
+}
+
+func TestBridgeExtractsToolNameFromMeta(t *testing.T) {
+	oldExecCommand := execCommand
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestBridgeHelperProcess", "--"}
+		cs = append(cs, args...)
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = append(os.Environ(),
+			"GO_WANT_HELPER_PROCESS=1",
+			"KIRO_BRIDGE_HELPER_MODE=tool-call-with-meta",
+		)
+		return cmd
+	}
+	defer func() { execCommand = oldExecCommand }()
+
+	b, err := NewBridge(BridgeConfig{CLIPath: "kiro-cli", CWD: ".", Agent: "kiro-bridge", Version: "test"})
+	if err != nil {
+		t.Fatalf("NewBridge: %v", err)
+	}
+	defer b.Close()
+
+	var toolNames []string
+	b.Prompt("test", func(ev PromptEvent) {
+		if ev.Type == EventToolCall {
+			toolNames = append(toolNames, ev.ToolName)
+		}
+	})
+	if len(toolNames) != 1 {
+		t.Fatalf("got %d tool calls, want 1", len(toolNames))
+	}
+	if toolNames[0] != "glob" {
+		t.Errorf("tool name = %q, want %q (from _meta.tool_name)", toolNames[0], "glob")
 	}
 }

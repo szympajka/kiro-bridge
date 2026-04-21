@@ -16,7 +16,14 @@ var execCommand = exec.Command
 // Bridge manages the kiro-cli ACP process and provides prompt functionality.
 type Bridge interface {
 	Prompt(text string, onEvent func(PromptEvent)) (string, error)
+	Models() []ModelInfo
 	Close() error
+}
+
+type ModelInfo struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
 // PromptEvent represents an event during a prompt turn.
@@ -44,6 +51,7 @@ type bridge struct {
 	mu      sync.Mutex
 	nextID  int
 	sessID  string
+	models  []ModelInfo
 	cwd     string
 	cliPath string
 	agent   string
@@ -198,7 +206,10 @@ func (b *bridge) initialize() error {
 	debugf("debug: sending initialize (id=%d)", id)
 	err := b.send(id, "initialize", InitializeParams{
 		ProtocolVersion: 1,
-		ClientInfo:      ClientInfo{Name: "kiro-bridge", Title: "Kiro Bridge", Version: b.version},
+		ClientCapabilities: ClientCapabilities{
+			PromptCapabilities: &PromptCapabilities{Image: true},
+		},
+		ClientInfo: ClientInfo{Name: "kiro-bridge", Title: "Kiro Bridge", Version: b.version},
 	})
 	if err != nil {
 		return err
@@ -234,6 +245,11 @@ func (b *bridge) newSession() error {
 		return err
 	}
 	b.sessID = result.SessionID
+	if result.Models != nil {
+		for _, m := range result.Models.AvailableModels {
+			b.models = append(b.models, ModelInfo{ID: m.ModelID, Name: m.Name, Description: m.Description})
+		}
+	}
 	debugf("debug: session created: %s", b.sessID)
 	return nil
 }
@@ -293,22 +309,34 @@ func (b *bridge) Prompt(text string, onEvent func(PromptEvent)) (string, error) 
 				onEvent(PromptEvent{Type: EventText, Text: update.Content.Text})
 			}
 		case "tool_call":
-			ev := PromptEvent{
-				Type:       EventToolCall,
-				ToolCallID: update.ToolCallID,
-				ToolName:   update.Title,
-				ToolStatus: update.Status,
-			}
+			name := update.Title
 			if len(params.Update) > 0 {
 				var raw struct {
+					Meta     *struct{ ToolName string `json:"tool_name"` } `json:"_meta"`
 					RawInput json.RawMessage `json:"rawInput"`
 				}
 				json.Unmarshal(params.Update, &raw)
+				if raw.Meta != nil && raw.Meta.ToolName != "" {
+					name = raw.Meta.ToolName
+				}
+				ev := PromptEvent{
+					Type:       EventToolCall,
+					ToolCallID: update.ToolCallID,
+					ToolName:   name,
+					ToolStatus: update.Status,
+				}
 				if raw.RawInput != nil {
 					ev.ToolInput = string(raw.RawInput)
 				}
+				onEvent(ev)
+			} else {
+				onEvent(PromptEvent{
+					Type:       EventToolCall,
+					ToolCallID: update.ToolCallID,
+					ToolName:   name,
+					ToolStatus: update.Status,
+				})
 			}
-			onEvent(ev)
 		case "tool_call_update":
 			onEvent(PromptEvent{
 				Type:       EventToolCallUpdate,
@@ -330,6 +358,8 @@ func (b *bridge) Prompt(text string, onEvent func(PromptEvent)) (string, error) 
 	}
 	return result.StopReason, nil
 }
+
+func (b *bridge) Models() []ModelInfo { return b.models }
 
 func (b *bridge) Close() error {
 	if b.stdin != nil {
