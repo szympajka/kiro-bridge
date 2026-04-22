@@ -195,6 +195,7 @@ func handleNonStream(w http.ResponseWriter, b Bridge, prompt []ContentBlock, id 
 	}
 
 	fr := mapStopReason(stopReason)
+	usage := b.Usage()
 	resp := ChatCompletionResponse{
 		ID:      id,
 		Object:  "chat.completion",
@@ -205,6 +206,7 @@ func handleNonStream(w http.ResponseWriter, b Bridge, prompt []ContentBlock, id 
 			Message:      &ChatMessage{Role: "assistant", Content: ChatContent{Text: full.String()}},
 			FinishReason: &fr,
 		}},
+		Usage: &ChatUsage{TotalTokens: usage.TotalTokens},
 	}
 
 	w.Header().Set("Content-Type", "application/json")

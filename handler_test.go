@@ -33,9 +33,10 @@ func (m *mockBridge) Prompt(blocks []ContentBlock, onEvent func(PromptEvent)) (s
 	return "end_turn", nil
 }
 
-func (m *mockBridge) Close() error    { return nil }
-func (m *mockBridge) Cancel()          {}
+func (m *mockBridge) Close() error       { return nil }
+func (m *mockBridge) Cancel()             {}
 func (m *mockBridge) Models() []ModelInfo { return nil }
+func (m *mockBridge) Usage() UsageInfo    { return UsageInfo{} }
 
 func TestBuildPromptTextWithContentParts(t *testing.T) {
 	body := `{"messages":[{"role":"system","content":"Be helpful."},{"role":"user","content":[{"type":"text","text":"hello"}]}],"model":"kiro","stream":true}`
@@ -539,9 +540,10 @@ func (m *mockBridgeWithToolCalls) Prompt(blocks []ContentBlock, onEvent func(Pro
 	return "end_turn", nil
 }
 
-func (m *mockBridgeWithToolCalls) Close() error    { return nil }
-func (m *mockBridgeWithToolCalls) Cancel()          {}
+func (m *mockBridgeWithToolCalls) Close() error       { return nil }
+func (m *mockBridgeWithToolCalls) Cancel()             {}
 func (m *mockBridgeWithToolCalls) Models() []ModelInfo { return nil }
+func (m *mockBridgeWithToolCalls) Usage() UsageInfo    { return UsageInfo{} }
 
 func TestHandleStreamWithToolCalls(t *testing.T) {
 	old := showToolAnnotations

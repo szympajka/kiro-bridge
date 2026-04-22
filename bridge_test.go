@@ -113,6 +113,41 @@ func TestBridgeHelperProcess(t *testing.T) {
 				"result":  map[string]any{},
 			}
 		case "session/prompt":
+			if mode == "with-metadata" {
+				chunk := map[string]any{
+					"jsonrpc": "2.0",
+					"method":  "session/update",
+					"params": map[string]any{
+						"sessionId": "sess-1",
+						"update": map[string]any{
+							"sessionUpdate": "agent_message_chunk",
+							"content":       map[string]any{"type": "text", "text": "hi"},
+						},
+					},
+				}
+				d, _ := json.Marshal(chunk)
+				writer.Write(append(d, '\n'))
+
+				meta := map[string]any{
+					"jsonrpc": "2.0",
+					"method":  "_kiro.dev/metadata",
+					"params": map[string]any{
+						"sessionId":              "sess-1",
+						"contextUsagePercentage": 1.5,
+						"turnDurationMs":         3000,
+					},
+				}
+				d, _ = json.Marshal(meta)
+				writer.Write(append(d, '\n'))
+				writer.Flush()
+
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req.ID,
+					"result":  map[string]any{"stopReason": "end_turn"},
+				}
+				break
+			}
 			if mode == "error-then-ok" {
 				if sessionCount <= 1 {
 					resp = map[string]any{
@@ -721,5 +756,36 @@ func TestBridgeReconnectsAfterRepeatedErrors(t *testing.T) {
 	_, err = b.Prompt([]ContentBlock{{Type: "text", Text: "test"}}, func(ev PromptEvent) {})
 	if err != nil {
 		t.Fatalf("prompt after reconnect should succeed, got: %v", err)
+	}
+}
+
+func TestBridgeCapturesContextUsage(t *testing.T) {
+	oldExecCommand := execCommand
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestBridgeHelperProcess", "--"}
+		cs = append(cs, args...)
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = append(os.Environ(),
+			"GO_WANT_HELPER_PROCESS=1",
+			"KIRO_BRIDGE_HELPER_MODE=with-metadata",
+		)
+		return cmd
+	}
+	defer func() { execCommand = oldExecCommand }()
+
+	b, err := NewBridge(BridgeConfig{CLIPath: "kiro-cli", CWD: ".", Agent: "kiro-bridge", Version: "test"})
+	if err != nil {
+		t.Fatalf("NewBridge: %v", err)
+	}
+	defer b.Close()
+
+	b.Prompt([]ContentBlock{{Type: "text", Text: "test"}}, func(ev PromptEvent) {})
+
+	usage := b.Usage()
+	if usage.ContextPercent == 0 {
+		t.Error("expected non-zero context usage after prompt")
+	}
+	if usage.TotalTokens == 0 {
+		t.Error("expected non-zero estimated tokens")
 	}
 }

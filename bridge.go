@@ -24,7 +24,25 @@ type Bridge interface {
 	Prompt(blocks []ContentBlock, onEvent func(PromptEvent)) (string, error)
 	Cancel()
 	Models() []ModelInfo
+	Usage() UsageInfo
 	Close() error
+}
+
+type UsageInfo struct {
+	ContextPercent float64
+	TotalTokens    int
+}
+
+var contextWindow = parseContextWindow()
+
+func parseContextWindow() int {
+	if v := os.Getenv("KIRO_BRIDGE_CONTEXT_WINDOW"); v != "" {
+		var n int
+		if _, err := fmt.Sscan(v, &n); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 200000
 }
 
 type ModelInfo struct {
@@ -61,6 +79,7 @@ type bridge struct {
 	models           []ModelInfo
 	suppressAbortErr bool
 	consecutiveErrs  int
+	lastContextPct   float64
 	cwd              string
 	cliPath          string
 	agent            string
@@ -308,6 +327,15 @@ func (b *bridge) Prompt(blocks []ContentBlock, onEvent func(PromptEvent)) (strin
 	}
 
 	resp, err := b.readResponseWithCallback(func(notif *Notification) {
+		if notif.Method == "_kiro.dev/metadata" {
+			var meta struct {
+				ContextUsagePercentage float64 `json:"contextUsagePercentage"`
+			}
+			if err := json.Unmarshal(notif.Params, &meta); err == nil {
+				b.lastContextPct = meta.ContextUsagePercentage
+			}
+			return
+		}
 		if notif.Method != "session/update" {
 			return
 		}
@@ -427,6 +455,12 @@ func (b *bridge) Cancel() {
 }
 
 func (b *bridge) Models() []ModelInfo { return b.models }
+
+func (b *bridge) Usage() UsageInfo {
+	pct := b.lastContextPct
+	tokens := int(pct / 100.0 * float64(contextWindow))
+	return UsageInfo{ContextPercent: pct, TotalTokens: tokens}
+}
 
 func (b *bridge) Close() error {
 	if b.stdin != nil {

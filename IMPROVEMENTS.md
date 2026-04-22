@@ -22,11 +22,4 @@
 
 ## Next
 
-| # | Title | Severity | Description |
-|---|-------|----------|-------------|
-| 16 | Always log kiro-cli stderr | High | Child process errors silently dropped unless KIRO_BRIDGE_VERBOSE is set. Startup failures should always surface stderr. |
-| 17 | Token usage estimation | Medium | Estimate prompt/completion tokens from `_kiro.dev/metadata` contextUsagePercentage × context window size. |
-| 18 | Health endpoint | Medium | `GET /healthz` returning 200/503 based on bridge state. Enables external monitoring. |
-| 19 | Log rotation | Low | `/tmp/kiro-bridge.log` is append-only. Add newsyslog config via Nix module. |
-| 20 | Launchd ThrottleInterval | Low | Add `ThrottleInterval = 10` to Nix module as safety net for unexpected crashes. |
-| 21 | Session reconnect on repeated errors | Low | If N consecutive prompts fail, recreate session as last resort. Kiro auto-compacts context so this is rarely needed. |
+All improvements completed. See [PROTOCOL_SUPPORT.md](PROTOCOL_SUPPORT.md) for remaining protocol limitations.
