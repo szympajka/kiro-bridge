@@ -112,6 +112,7 @@ func main() {
 		}
 		handleModels(b)(w, r)
 	})
+	mux.HandleFunc("/healthz", handleHealthz(holder))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		debugf("request: %s %s", r.Method, r.URL.Path)
 		http.NotFound(w, r)
@@ -160,6 +161,17 @@ func handleModels(b Bridge) http.HandlerFunc {
 			data = append(data, openaiModel{ID: m.ID, Object: "model", OwnedBy: "kiro-bridge"})
 		}
 		json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": data})
+	}
+}
+
+func handleHealthz(holder *bridgeHolder) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if holder.Get() == nil {
+			http.Error(w, "bridge not ready", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok\n"))
 	}
 }
 

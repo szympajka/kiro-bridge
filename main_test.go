@@ -216,3 +216,34 @@ func TestStderrWriterAlwaysLogs(t *testing.T) {
 	// We can't easily capture log output, but we verify the type exists
 	// and accepts writes without the verbose flag
 }
+
+func TestHealthz(t *testing.T) {
+	t.Run("returns 200 when bridge connected", func(t *testing.T) {
+		holder := &bridgeHolder{}
+		holder.Set(&mockBridge{})
+
+		handler := handleHealthz(holder)
+		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+		w := httptest.NewRecorder()
+		handler(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("status = %d, want 200", w.Code)
+		}
+		if !strings.Contains(w.Body.String(), "ok") {
+			t.Errorf("body = %q, want ok", w.Body.String())
+		}
+	})
+	t.Run("returns 503 when bridge not ready", func(t *testing.T) {
+		holder := &bridgeHolder{}
+
+		handler := handleHealthz(holder)
+		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+		w := httptest.NewRecorder()
+		handler(w, req)
+
+		if w.Code != http.StatusServiceUnavailable {
+			t.Errorf("status = %d, want 503", w.Code)
+		}
+	})
+}

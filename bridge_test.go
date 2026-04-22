@@ -50,6 +50,7 @@ func TestBridgeHelperProcess(t *testing.T) {
 	mode := os.Getenv("KIRO_BRIDGE_HELPER_MODE")
 	scanner := bufio.NewScanner(os.Stdin)
 	writer := bufio.NewWriter(os.Stdout)
+	sessionCount := 0
 
 	for scanner.Scan() {
 		var req Request
@@ -69,6 +70,7 @@ func TestBridgeHelperProcess(t *testing.T) {
 				},
 			}
 		case "session/new":
+			sessionCount++
 			if mode == "with-models" {
 				resp = map[string]any{
 					"jsonrpc": "2.0",
@@ -111,6 +113,36 @@ func TestBridgeHelperProcess(t *testing.T) {
 				"result":  map[string]any{},
 			}
 		case "session/prompt":
+			if mode == "error-then-ok" {
+				if sessionCount <= 1 {
+					resp = map[string]any{
+						"jsonrpc": "2.0",
+						"id":      req.ID,
+						"error":   map[string]any{"code": -32603, "message": "Internal error"},
+					}
+					break
+				}
+				chunk := map[string]any{
+					"jsonrpc": "2.0",
+					"method":  "session/update",
+					"params": map[string]any{
+						"sessionId": "sess-1",
+						"update": map[string]any{
+							"sessionUpdate": "agent_message_chunk",
+							"content":       map[string]any{"type": "text", "text": "ok"},
+						},
+					},
+				}
+				d, _ := json.Marshal(chunk)
+				writer.Write(append(d, '\n'))
+				writer.Flush()
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req.ID,
+					"result":  map[string]any{"stopReason": "end_turn"},
+				}
+				break
+			}
 			if mode == "slow-prompt" {
 				// Send first chunk
 				chunk := map[string]any{
@@ -654,5 +686,40 @@ func TestBridgeSendsCancelNotification(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Prompt did not complete after cancel")
+	}
+}
+
+func TestBridgeReconnectsAfterRepeatedErrors(t *testing.T) {
+	oldExecCommand := execCommand
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestBridgeHelperProcess", "--"}
+		cs = append(cs, args...)
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = append(os.Environ(),
+			"GO_WANT_HELPER_PROCESS=1",
+			"KIRO_BRIDGE_HELPER_MODE=error-then-ok",
+		)
+		return cmd
+	}
+	defer func() { execCommand = oldExecCommand }()
+
+	b, err := NewBridge(BridgeConfig{CLIPath: "kiro-cli", CWD: ".", Agent: "kiro-bridge", Version: "test"})
+	if err != nil {
+		t.Fatalf("NewBridge: %v", err)
+	}
+	defer b.Close()
+
+	// First 3 prompts return errors
+	for i := 0; i < 3; i++ {
+		_, err = b.Prompt([]ContentBlock{{Type: "text", Text: "test"}}, func(ev PromptEvent) {})
+		if err == nil {
+			t.Fatalf("prompt %d should error", i)
+		}
+	}
+
+	// 4th prompt should succeed — bridge recreated session after 3 consecutive errors
+	_, err = b.Prompt([]ContentBlock{{Type: "text", Text: "test"}}, func(ev PromptEvent) {})
+	if err != nil {
+		t.Fatalf("prompt after reconnect should succeed, got: %v", err)
 	}
 }

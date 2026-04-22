@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"sync"
@@ -51,19 +52,22 @@ const (
 )
 
 type bridge struct {
-	cmd             *exec.Cmd
-	stdin           io.WriteCloser
-	scanner         *bufio.Scanner
-	mu              sync.Mutex
-	nextID          int
-	sessID          string
-	models          []ModelInfo
+	cmd              *exec.Cmd
+	stdin            io.WriteCloser
+	scanner          *bufio.Scanner
+	mu               sync.Mutex
+	nextID           int
+	sessID           string
+	models           []ModelInfo
 	suppressAbortErr bool
-	cwd             string
-	cliPath         string
-	agent           string
-	version         string
+	consecutiveErrs  int
+	cwd              string
+	cliPath          string
+	agent            string
+	version          string
 }
+
+const maxConsecutiveErrors = 3
 
 type BridgeConfig struct {
 	CLIPath string
@@ -364,6 +368,11 @@ func (b *bridge) Prompt(blocks []ContentBlock, onEvent func(PromptEvent)) (strin
 			b.suppressAbortErr = false
 			return "cancelled", nil
 		}
+		b.consecutiveErrs++
+		if b.consecutiveErrs >= maxConsecutiveErrors {
+			log.Printf("reconnecting session after %d consecutive errors", b.consecutiveErrs)
+			b.reconnectSession()
+		}
 		return "", err
 	}
 	if resp.Error != nil {
@@ -371,15 +380,34 @@ func (b *bridge) Prompt(blocks []ContentBlock, onEvent func(PromptEvent)) (strin
 			b.suppressAbortErr = false
 			return "cancelled", nil
 		}
+		b.consecutiveErrs++
+		if b.consecutiveErrs >= maxConsecutiveErrors {
+			log.Printf("reconnecting session after %d consecutive errors", b.consecutiveErrs)
+			b.reconnectSession()
+		}
 		return "", fmt.Errorf("prompt error: %w", resp.Error)
 	}
 	b.suppressAbortErr = false
+	b.consecutiveErrs = 0
 
 	var result SessionPromptResult
 	if err := json.Unmarshal(resp.Result, &result); err != nil {
 		return result.StopReason, nil
 	}
 	return result.StopReason, nil
+}
+
+func (b *bridge) reconnectSession() {
+	b.consecutiveErrs = 0
+	if err := b.newSession(); err != nil {
+		log.Printf("failed to recreate session: %v", err)
+		return
+	}
+	if b.agent != "" {
+		if err := b.setMode(); err != nil {
+			log.Printf("failed to set mode after reconnect: %v", err)
+		}
+	}
 }
 
 func (b *bridge) Cancel() {

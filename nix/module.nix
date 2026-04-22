@@ -51,6 +51,11 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
+    environment.etc."newsyslog.d/kiro-bridge.conf".text = ''
+      # logfilename          [owner:group]  mode  count  size  when  flags
+      /tmp/kiro-bridge.log                  644   3      1024  *     J
+    '';
+
     launchd.agents.kiro-bridge = {
       serviceConfig = {
         Program = "${cfg.package}/bin/kiro-bridge";
@@ -70,6 +75,7 @@ in {
         } // cfg.extraEnv;
         KeepAlive = true;
         RunAtLoad = true;
+        ThrottleInterval = 10;
         StandardOutPath = "/tmp/kiro-bridge.log";
         StandardErrorPath = "/tmp/kiro-bridge.log";
       };
