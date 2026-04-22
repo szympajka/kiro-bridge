@@ -145,7 +145,7 @@ func handleStream(w http.ResponseWriter, b Bridge, prompt []ContentBlock, id str
 			if !showToolAnnotations {
 				return
 			}
-			delta = &ChatMessage{Content: ChatContent{Text: fmt.Sprintf("> 🔧 %s\n\n", ev.ToolName)}}
+			delta = &ChatMessage{Content: ChatContent{Text: fmt.Sprintf("> 🔧 %s\n\n---\n\n", ev.ToolName)}}
 		default:
 			return
 		}
