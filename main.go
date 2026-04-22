@@ -180,6 +180,13 @@ func (w *debugWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+type stderrWriter struct{ prefix string }
+
+func (w *stderrWriter) Write(p []byte) (int, error) {
+	log.Printf("%s%s", w.prefix, bytes.TrimRight(p, "\n"))
+	return len(p), nil
+}
+
 func logMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if verboseLog {

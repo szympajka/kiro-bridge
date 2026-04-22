@@ -89,7 +89,7 @@ func NewBridge(cfg BridgeConfig) (Bridge, error) {
 
 func (b *bridge) start() error {
 	b.cmd = execCommand(b.cliPath, "acp")
-	b.cmd.Stderr = &debugWriter{prefix: "[kiro-cli] "}
+	b.cmd.Stderr = &stderrWriter{prefix: "[kiro-cli] "}
 
 	var err error
 	b.stdin, err = b.cmd.StdinPipe()
