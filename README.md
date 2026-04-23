@@ -1,53 +1,15 @@
 # kiro-bridge
 
-OpenAI-compatible HTTP proxy to [kiro-cli](https://kiro.dev) via the [Agent Client Protocol (ACP)](https://agentclientprotocol.com). Any tool that speaks the OpenAI API can use Kiro as a backend.
+Bring Kiro to every AI tool in your workflow — Raycast, Continue, Open WebUI, and anything that speaks the OpenAI API.
 
 ```
 Client  ──POST /v1/chat/completions──▶  kiro-bridge  ──JSON-RPC/stdio──▶  kiro-cli acp
         ◀──SSE stream────────────────               ◀──session/update────
 ```
 
-## What it does now
+kiro-bridge is a lightweight HTTP server that translates between the [OpenAI Chat Completions API](https://platform.openai.com/docs/api-reference/chat) and Kiro's [Agent Client Protocol (ACP)](https://agentclientprotocol.com). It spawns `kiro-cli acp` as a backend, so you get everything Kiro offers — models, tools, file access, web search — streamed back through a standard OpenAI endpoint that any client can consume.
 
-- Translates OpenAI `POST /v1/chat/completions` to ACP `session/prompt`
-- Streaming (SSE) and non-streaming responses
-- Pre-approved read-only tools (file search, grep, web search) run transparently inside Kiro
-- Tool call annotations in responses (experimental, enable with `KIRO_BRIDGE_SHOW_TOOLS`)
-- Exponential backoff on startup — retries connecting to kiro-cli instead of crashing, returns 503 while connecting
-- Handles ACP permission requests — rejects by default to prevent unintended writes
-- One persistent ACP session per bridge process; stateless mode is not implemented yet
-- Configurable agent, working directory, body limit, and logging
-- Localhost only, 1MB default body limit
-
-> **Tool permissions:** Kiro requests permission for write/edit tools. The bridge rejects these by default. To allow writes, add the tools to `allowedTools` in your agent config so Kiro pre-approves them without asking.
-
-### Protocol support
-
-The bridge translates a subset of each protocol. See [PROTOCOL_SUPPORT.md](PROTOCOL_SUPPORT.md) for the full matrix.
-
-| Area | Supported | Partial | Not supported |
-|------|-----------|---------|---------------|
-| OpenAI request fields | 2 | 3 | 11 |
-| OpenAI message types | 1 | 2 | 2 |
-| ACP agent methods | 4 | — | 3 |
-| ACP session updates | 1 | 2 | 5 |
-| ACP content types | 1 | — | 4 |
-| JSON-RPC 2.0 | 5 | — | 2 |
-
-## Planned
-
-- Surface tool calls and reasoning steps as streaming events
-- Conversation history replay from OpenAI messages array
-- Stateless mode — new ACP session per request, no context carryover
-- Session TTL — auto-prune stale sessions
-- Linux systemd service example
-
-## Prerequisites
-
-- [kiro-cli](https://kiro.dev) installed and authenticated
-- [Nix](https://nixos.org) (for building) or Go 1.24+
-
-## Setup
+## Quick start
 
 ### 1. Install
 
@@ -129,6 +91,19 @@ providers:
           tools:
             supported: false
 ```
+
+## Features
+
+- **OpenAI-compatible API** — `POST /v1/chat/completions` with streaming (SSE) and non-streaming responses
+- **Dynamic model list** — `GET /v1/models` serves real models from Kiro (Claude Opus, Sonnet, Haiku, DeepSeek, and more)
+- **Vision support** — forward images from OpenAI `image_url` content to Kiro (experimental)
+- **Tool transparency** — Kiro's tools (file search, grep, web search) run inside the ACP session with optional annotations
+- **Conversation replay** — include assistant message history for multi-turn context (experimental)
+- **Token usage estimation** — approximate token counts from Kiro's context usage metadata
+- **Health endpoint** — `GET /healthz` for monitoring
+- **Resilient** — exponential backoff on startup, session reconnect after repeated errors, graceful cancellation
+
+> **Tool permissions:** Kiro requests permission for write/edit tools. The bridge rejects these by default. To allow writes, add the tools to `allowedTools` in your agent config so Kiro pre-approves them without asking.
 
 ## Configuration
 
