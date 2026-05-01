@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -20,6 +21,13 @@ func env(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func flagOrEnv(flagVal, envKey, fallback string) string {
+	if flagVal != "" {
+		return flagVal
+	}
+	return env(envKey, fallback)
 }
 
 var version = "dev"
@@ -72,11 +80,18 @@ func connectWithBackoff(cfg BridgeConfig, holder *bridgeHolder, stop <-chan stru
 }
 
 func main() {
-	port := env("KIRO_BRIDGE_PORT", "11435")
-	cwd := env("KIRO_BRIDGE_CWD", ".")
-	cliPath := env("KIRO_CLI_PATH", "kiro-cli")
-	agent := env("KIRO_BRIDGE_AGENT", "kiro-bridge")
-	target := env("KIRO_BRIDGE_TARGET", "")
+	portFlag := flag.String("port", "", "HTTP server port")
+	cwdFlag := flag.String("cwd", "", "Working directory for ACP sessions")
+	cliFlag := flag.String("cli", "", "Path to kiro-cli binary")
+	agentFlag := flag.String("agent", "", "Kiro agent config to activate")
+	targetFlag := flag.String("target", "", "Target platform (e.g. claude)")
+	flag.Parse()
+
+	port := flagOrEnv(*portFlag, "KIRO_BRIDGE_PORT", "11435")
+	cwd := flagOrEnv(*cwdFlag, "KIRO_BRIDGE_CWD", ".")
+	cliPath := flagOrEnv(*cliFlag, "KIRO_CLI_PATH", "kiro-cli")
+	agent := flagOrEnv(*agentFlag, "KIRO_BRIDGE_AGENT", "kiro-bridge")
+	target := flagOrEnv(*targetFlag, "KIRO_BRIDGE_TARGET", "")
 
 	if cwd == "." {
 		var err error
