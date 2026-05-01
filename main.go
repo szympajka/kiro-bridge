@@ -76,6 +76,7 @@ func main() {
 	cwd := env("KIRO_BRIDGE_CWD", ".")
 	cliPath := env("KIRO_CLI_PATH", "kiro-cli")
 	agent := env("KIRO_BRIDGE_AGENT", "kiro-bridge")
+	target := env("KIRO_BRIDGE_TARGET", "")
 
 	if cwd == "." {
 		var err error
@@ -85,7 +86,24 @@ func main() {
 		}
 	}
 
-	log.Printf("starting kiro-bridge v%s on 127.0.0.1:%s (cwd=%s, cli=%s, agent=%s)", version, port, cwd, cliPath, agent)
+	log.Printf("starting kiro-bridge v%s on 127.0.0.1:%s (cwd=%s, cli=%s, agent=%s, target=%s)", version, port, cwd, cliPath, agent, target)
+
+	loadAgentConfig(agent)
+
+	if target == "claude" {
+		claudeMCP := loadClaudeMCPServers(cwd)
+		if len(claudeMCP) > 0 {
+			log.Printf("loaded %d MCP servers from Claude config", len(claudeMCP))
+			mergeClaudeMCPIntoAgent(agent, claudeMCP)
+		}
+	}
+
+	if enableFS {
+		log.Printf("fs/read_text_file and fs/write_text_file enabled")
+	}
+	if enableTerminal {
+		log.Printf("terminal/* methods enabled")
+	}
 
 	holder := &bridgeHolder{}
 	cfg := BridgeConfig{CLIPath: cliPath, CWD: cwd, Agent: agent, Version: version}
