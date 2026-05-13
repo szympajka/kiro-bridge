@@ -102,6 +102,14 @@ func main() {
 		}
 		handleChatCompletions(b)(w, r)
 	})
+	mux.HandleFunc("/v1/messages", func(w http.ResponseWriter, r *http.Request) {
+		b := holder.Get()
+		if b == nil {
+			http.Error(w, "bridge not ready", http.StatusServiceUnavailable)
+			return
+		}
+		handleAnthropicMessages(b)(w, r)
+	})
 	mux.HandleFunc("/v1/models", func(w http.ResponseWriter, r *http.Request) {
 		b := holder.Get()
 		if b == nil {
