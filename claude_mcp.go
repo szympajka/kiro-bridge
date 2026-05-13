@@ -5,10 +5,18 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 type ClaudeMCPConfig struct {
+	MCPServers map[string]json.RawMessage `json:"mcpServers"`
+}
+
+type claudeJsonConfig struct {
+	MCPServers map[string]json.RawMessage            `json:"mcpServers"`
+	Projects   map[string]claudeJsonProjectEntry     `json:"projects"`
+}
+
+type claudeJsonProjectEntry struct {
 	MCPServers map[string]json.RawMessage `json:"mcpServers"`
 }
 
@@ -20,13 +28,39 @@ func loadClaudeMCPServers(cwd string) map[string]json.RawMessage {
 		return merged
 	}
 
-	globalPath := filepath.Join(home, ".claude", ".mcp.json")
-	loadMCPFile(globalPath, merged)
+	claudeJsonPath := filepath.Join(home, ".claude.json")
+	loadClaudeJson(claudeJsonPath, cwd, merged)
 
-	projectPath := filepath.Join(home, ".claude", "projects", "-"+strings.ReplaceAll(cwd, "/", "-"), ".mcp.json")
-	loadMCPFile(projectPath, merged)
+	projectMCPPath := filepath.Join(cwd, ".mcp.json")
+	loadMCPFile(projectMCPPath, merged)
 
 	return merged
+}
+
+func loadClaudeJson(path, cwd string, dest map[string]json.RawMessage) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var cfg claudeJsonConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		debugf("debug: failed to parse %s: %v", path, err)
+		return
+	}
+
+	for name, server := range cfg.MCPServers {
+		dest[name] = server
+		debugf("debug: loaded user-scope mcp server: %s from %s", name, path)
+	}
+
+	if cwd != "" {
+		if proj, ok := cfg.Projects[cwd]; ok {
+			for name, server := range proj.MCPServers {
+				dest[name] = server
+				debugf("debug: loaded local-scope mcp server: %s for project %s", name, cwd)
+			}
+		}
+	}
 }
 
 func loadMCPFile(path string, dest map[string]json.RawMessage) {

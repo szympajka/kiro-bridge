@@ -80,12 +80,18 @@ func connectWithBackoff(cfg BridgeConfig, holder *bridgeHolder, stop <-chan stru
 }
 
 func main() {
+	versionFlag := flag.Bool("version", false, "Print version and exit")
 	portFlag := flag.String("port", "", "HTTP server port")
 	cwdFlag := flag.String("cwd", "", "Working directory for ACP sessions")
 	cliFlag := flag.String("cli", "", "Path to kiro-cli binary")
 	agentFlag := flag.String("agent", "", "Kiro agent config to activate")
 	targetFlag := flag.String("target", "", "Target platform (e.g. claude)")
 	flag.Parse()
+
+	if *versionFlag {
+		fmt.Println("kiro-bridge", version)
+		return
+	}
 
 	port := flagOrEnv(*portFlag, "KIRO_BRIDGE_PORT", "11435")
 	cwd := flagOrEnv(*cwdFlag, "KIRO_BRIDGE_CWD", ".")
