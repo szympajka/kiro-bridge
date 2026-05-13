@@ -218,23 +218,63 @@ func (b *bridge) handleIncomingRequest(req *Request) {
 				"optionId": "reject_once",
 			},
 		})
-		data, err := newResponse(req.ID, result)
-		if err != nil {
-			debugf("debug: failed to marshal permission response: %v", err)
-			return
-		}
-		data = append(data, '\n')
-		b.stdin.Write(data)
+		b.respond(req.ID, result, nil)
+
+	case "fs/read_text_file":
+		debugf("debug: handling fs/read_text_file id=%v", req.ID)
+		result, rpcErr := handleFSRead(req.Params, b.cwd)
+		b.respond(req.ID, result, rpcErr)
+
+	case "fs/write_text_file":
+		debugf("debug: handling fs/write_text_file id=%v", req.ID)
+		result, rpcErr := handleFSWrite(req.Params, b.cwd)
+		b.respond(req.ID, result, rpcErr)
+
+	case "terminal/create":
+		debugf("debug: handling terminal/create id=%v", req.ID)
+		result, rpcErr := handleTerminalCreate(req.Params, b.cwd)
+		b.respond(req.ID, result, rpcErr)
+
+	case "terminal/output":
+		debugf("debug: handling terminal/output id=%v", req.ID)
+		result, rpcErr := handleTerminalOutput(req.Params)
+		b.respond(req.ID, result, rpcErr)
+
+	case "terminal/wait_for_exit":
+		debugf("debug: handling terminal/wait_for_exit id=%v", req.ID)
+		result, rpcErr := handleTerminalWaitForExit(req.Params)
+		b.respond(req.ID, result, rpcErr)
+
+	case "terminal/release":
+		debugf("debug: handling terminal/release id=%v", req.ID)
+		result, rpcErr := handleTerminalRelease(req.Params)
+		b.respond(req.ID, result, rpcErr)
+
+	case "terminal/kill":
+		debugf("debug: handling terminal/kill id=%v", req.ID)
+		result, rpcErr := handleTerminalKill(req.Params)
+		b.respond(req.ID, result, rpcErr)
+
 	default:
 		debugf("debug: method not found: %s", req.Method)
-		data, err := newErrorResponse(req.ID, -32601, "Method not found")
-		if err != nil {
-			debugf("debug: failed to marshal error response: %v", err)
-			return
-		}
-		data = append(data, '\n')
-		b.stdin.Write(data)
+		b.respond(req.ID, nil, &RPCError{Code: -32601, Message: "Method not found"})
 	}
+}
+
+func (b *bridge) respond(id RPCID, result json.RawMessage, rpcErr *RPCError) {
+	var data []byte
+	var err error
+	if rpcErr != nil {
+		data, err = newErrorResponse(id, rpcErr.Code, rpcErr.Message)
+	} else {
+		data, err = newResponse(id, result)
+	}
+	if err != nil {
+		debugf("debug: failed to marshal response: %v", err)
+		return
+	}
+	data = append(data, '\n')
+	b.stdin.Write(data)
 }
 
 func (b *bridge) initialize() error {

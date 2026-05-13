@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -206,14 +207,13 @@ func TestBridgeHelperProcess(t *testing.T) {
 				}
 				break
 			}
-			if mode == "unknown-method" {
-				// Send an unknown agent→client request
-				unknownReq := map[string]any{
-					"jsonrpc": "2.0",
-					"id":      "unknown-1",
-					"method":  "fs/read_text_file",
-					"params":  map[string]any{"path": "/tmp/test.txt"},
-				}
+		if mode == "unknown-method" {
+			unknownReq := map[string]any{
+				"jsonrpc": "2.0",
+				"id":      "unknown-1",
+				"method":  "some/unknown/method",
+				"params":  map[string]any{"foo": "bar"},
+			}
 				d, _ := json.Marshal(unknownReq)
 				writer.Write(append(d, '\n'))
 				writer.Flush()
@@ -330,6 +330,83 @@ func TestBridgeHelperProcess(t *testing.T) {
 						"update": map[string]any{
 							"sessionUpdate": "agent_message_chunk",
 							"content":       map[string]any{"type": "text", "text": "file contents here"},
+						},
+					},
+				}
+				d, _ = json.Marshal(chunk)
+				writer.Write(append(d, '\n'))
+				writer.Flush()
+
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req.ID,
+					"result":  map[string]any{"stopReason": "end_turn"},
+				}
+				break
+			}
+			if mode == "fs-read" {
+				fsReq := map[string]any{
+					"jsonrpc": "2.0",
+					"id":      "fs-1",
+					"method":  "fs/read_text_file",
+					"params":  map[string]any{"path": os.Getenv("KIRO_BRIDGE_TEST_FILE")},
+				}
+				d, _ := json.Marshal(fsReq)
+				writer.Write(append(d, '\n'))
+				writer.Flush()
+
+				if !scanner.Scan() {
+					os.Exit(2)
+				}
+
+				chunk := map[string]any{
+					"jsonrpc": "2.0",
+					"method":  "session/update",
+					"params": map[string]any{
+						"sessionId": "sess-1",
+						"update": map[string]any{
+							"sessionUpdate": "agent_message_chunk",
+							"content":       map[string]any{"type": "text", "text": "read ok"},
+						},
+					},
+				}
+				d, _ = json.Marshal(chunk)
+				writer.Write(append(d, '\n'))
+				writer.Flush()
+
+				resp = map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req.ID,
+					"result":  map[string]any{"stopReason": "end_turn"},
+				}
+				break
+			}
+			if mode == "fs-write" {
+				fsReq := map[string]any{
+					"jsonrpc": "2.0",
+					"id":      "fs-2",
+					"method":  "fs/write_text_file",
+					"params": map[string]any{
+						"path":     os.Getenv("KIRO_BRIDGE_TEST_FILE"),
+						"contents": "written by kiro",
+					},
+				}
+				d, _ := json.Marshal(fsReq)
+				writer.Write(append(d, '\n'))
+				writer.Flush()
+
+				if !scanner.Scan() {
+					os.Exit(2)
+				}
+
+				chunk := map[string]any{
+					"jsonrpc": "2.0",
+					"method":  "session/update",
+					"params": map[string]any{
+						"sessionId": "sess-1",
+						"update": map[string]any{
+							"sessionUpdate": "agent_message_chunk",
+							"content":       map[string]any{"type": "text", "text": "write ok"},
 						},
 					},
 				}
@@ -787,5 +864,98 @@ func TestBridgeCapturesContextUsage(t *testing.T) {
 	}
 	if usage.TotalTokens == 0 {
 		t.Error("expected non-zero estimated tokens")
+	}
+}
+
+func TestBridgeHandlesFSRead(t *testing.T) {
+	old := enableFS
+	enableFS = true
+	defer func() { enableFS = old }()
+
+	tmp := t.TempDir()
+	testFile := filepath.Join(tmp, "test.txt")
+	os.WriteFile(testFile, []byte("bridge read test"), 0644)
+
+	oldExecCommand := execCommand
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestBridgeHelperProcess", "--"}
+		cs = append(cs, args...)
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = append(os.Environ(),
+			"GO_WANT_HELPER_PROCESS=1",
+			"KIRO_BRIDGE_HELPER_MODE=fs-read",
+			"KIRO_BRIDGE_TEST_FILE="+testFile,
+		)
+		return cmd
+	}
+	defer func() { execCommand = oldExecCommand }()
+
+	b, err := NewBridge(BridgeConfig{CLIPath: "kiro-cli", CWD: tmp, Agent: "kiro-bridge", Version: "test"})
+	if err != nil {
+		t.Fatalf("NewBridge: %v", err)
+	}
+	defer b.Close()
+
+	var chunks []string
+	_, err = b.Prompt([]ContentBlock{{Type: "text", Text: "read file"}}, func(ev PromptEvent) {
+		if ev.Type == EventText {
+			chunks = append(chunks, ev.Text)
+		}
+	})
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	if len(chunks) == 0 {
+		t.Fatal("expected at least one chunk")
+	}
+}
+
+func TestBridgeHandlesFSWrite(t *testing.T) {
+	old := enableFS
+	enableFS = true
+	defer func() { enableFS = old }()
+
+	tmp := t.TempDir()
+	testFile := filepath.Join(tmp, "written.txt")
+
+	oldExecCommand := execCommand
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestBridgeHelperProcess", "--"}
+		cs = append(cs, args...)
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = append(os.Environ(),
+			"GO_WANT_HELPER_PROCESS=1",
+			"KIRO_BRIDGE_HELPER_MODE=fs-write",
+			"KIRO_BRIDGE_TEST_FILE="+testFile,
+		)
+		return cmd
+	}
+	defer func() { execCommand = oldExecCommand }()
+
+	b, err := NewBridge(BridgeConfig{CLIPath: "kiro-cli", CWD: tmp, Agent: "kiro-bridge", Version: "test"})
+	if err != nil {
+		t.Fatalf("NewBridge: %v", err)
+	}
+	defer b.Close()
+
+	var chunks []string
+	_, err = b.Prompt([]ContentBlock{{Type: "text", Text: "write file"}}, func(ev PromptEvent) {
+		if ev.Type == EventText {
+			chunks = append(chunks, ev.Text)
+		}
+	})
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	if len(chunks) == 0 {
+		t.Fatal("expected at least one chunk")
+	}
+
+	data, err := os.ReadFile(testFile)
+	if err != nil {
+		t.Fatalf("read written file: %v", err)
+	}
+	if string(data) != "written by kiro" {
+		t.Errorf("file contents = %q, want %q", string(data), "written by kiro")
 	}
 }

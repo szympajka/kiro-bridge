@@ -1,8 +1,14 @@
 {
   "name": "kiro-bridge",
-  "description": "Headless agent for kiro-bridge, read-only tools pre-approved",
+  "description": "Headless agent for kiro-bridge, full tool access with MCP",
   "model": "auto",
-  "tools": ["fs_read", "grep", "glob", "web_search"],
-  "allowedTools": ["fs_read", "grep", "glob", "web_search"],
-  "resources": []
+  "mcpServers": {},
+  "tools": ["fs_read", "fs_write", "grep", "glob", "web_search", "terminal"],
+  "allowedTools": ["fs_read", "fs_write", "grep", "glob", "web_search", "terminal"],
+  "resources": [],
+  "useLegacyMcpJson": true,
+  "bridge": {
+    "enableFS": true,
+    "enableTerminal": true
+  }
 }
