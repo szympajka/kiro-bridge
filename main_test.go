@@ -202,6 +202,33 @@ func TestEnvDefaults(t *testing.T) {
 	})
 }
 
+func TestFlagOrEnv(t *testing.T) {
+	const envKey = "KIRO_BRIDGE_FLAGORENV_TEST"
+
+	t.Run("flag value wins over env and fallback", func(t *testing.T) {
+		t.Setenv(envKey, "from-env")
+		if got := flagOrEnv("from-flag", envKey, "fallback"); got != "from-flag" {
+			t.Errorf("got %q, want %q", got, "from-flag")
+		}
+	})
+	t.Run("env used when flag empty", func(t *testing.T) {
+		t.Setenv(envKey, "from-env")
+		if got := flagOrEnv("", envKey, "fallback"); got != "from-env" {
+			t.Errorf("got %q, want %q", got, "from-env")
+		}
+	})
+	t.Run("fallback used when flag and env empty", func(t *testing.T) {
+		if got := flagOrEnv("", "KIRO_BRIDGE_FLAGORENV_UNSET_98765", "fallback"); got != "fallback" {
+			t.Errorf("got %q, want %q", got, "fallback")
+		}
+	})
+	t.Run("flag wins even when env unset", func(t *testing.T) {
+		if got := flagOrEnv("from-flag", "KIRO_BRIDGE_FLAGORENV_UNSET_98765", "fallback"); got != "from-flag" {
+			t.Errorf("got %q, want %q", got, "from-flag")
+		}
+	})
+}
+
 func TestStderrWriterAlwaysLogs(t *testing.T) {
 	var w stderrWriter
 	w.prefix = "[test] "
