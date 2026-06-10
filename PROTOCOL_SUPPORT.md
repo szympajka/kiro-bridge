@@ -1,6 +1,6 @@
 # Protocol Support Matrix
 
-Current translation coverage between OpenAI Chat Completions API and ACP (Agent Client Protocol) over JSON-RPC 2.0.
+Current translation coverage between mainstream chat APIs (OpenAI Chat Completions, Anthropic Messages) and ACP (Agent Client Protocol) over JSON-RPC 2.0.
 
 Legend: ✅ Supported | ⚠️ Partial | ❌ Not supported | 🔄 Custom handling | — Not applicable
 
@@ -66,6 +66,69 @@ Legend: ✅ Supported | ⚠️ Partial | ❌ Not supported | 🔄 Custom handlin
 | `delta.content` | ✅ | From `agent_message_chunk`. |
 | `delta.role` | ✅ | `"assistant"` on first chunk. |
 | `delta.tool_calls` | ❌ | Not mapped. |
+
+## Anthropic Messages → ACP
+
+The Anthropic endpoint (`/v1/messages`) reuses the same ACP translation path as the OpenAI endpoint (see [ACP → OpenAI](#acp--openai) below for the shared agent-side mapping). It is experimental — see the README disclaimer on connecting Anthropic client software to a non-Anthropic backend.
+
+### Request fields
+
+| Field | Status | Notes |
+|-------|--------|-------|
+| `model` | ⚠️ | Echoed in response. Not forwarded to ACP — Kiro selects model internally. Defaults to `kiro` when empty. |
+| `messages` | ⚠️ | User + assistant flattened to prompt. Assistant included when `KIRO_BRIDGE_REPLAY_HISTORY` enabled. |
+| `system` | ⚠️ | Prepended as "System: " text. Accepts string or content-block array. |
+| `stream` | ✅ | Maps to SSE via `session/update` notifications. |
+| `max_tokens` | ❌ | Required by the Anthropic format and accepted, but not forwarded — Kiro manages its own output limits. |
+| `temperature` | ❌ | No ACP equivalent. Silently ignored. |
+| `top_p` | ❌ | No ACP equivalent. Silently ignored. |
+| `top_k` | ❌ | No ACP equivalent. Silently ignored. |
+| `stop_sequences` | ❌ | No ACP equivalent. Silently ignored. |
+| `tools` | ❌ | ACP tools are agent-side. Client tool definitions ignored. |
+| `tool_choice` | ❌ | Kiro decides tool usage autonomously. |
+| `thinking` | ❌ | No ACP equivalent. Kiro manages its own reasoning. Silently ignored. |
+| `service_tier` | ❌ | Not applicable — requests go to local Kiro, not Anthropic. Silently ignored. |
+| `metadata` | ❌ | Not forwarded. |
+| `cache_control` | ❌ | No ACP equivalent. Silently ignored. |
+| `container` | ❌ | No ACP equivalent. Silently ignored. |
+| `inference_geo` | ❌ | Not applicable — requests go to local Kiro. Silently ignored. |
+| `output_config` | ❌ | No ACP structured output mode. Silently ignored. |
+
+### Message content
+
+| Type | Status | Notes |
+|------|--------|-------|
+| `content` (string) | ✅ | Direct mapping. |
+| `content` (block array) | ⚠️ | `text` blocks concatenated. Non-text blocks (image, etc.) dropped. |
+
+### Response fields
+
+| Field | Status | Notes |
+|-------|--------|-------|
+| `id` | 🔄 | Bridge-generated `msg_{ts}_{n}`. |
+| `type` | 🔄 | `message`. |
+| `role` | 🔄 | `assistant`. |
+| `content[].text` | ✅ | From `agent_message_chunk`. Single text block. |
+| `content[].tool_use` | ❌ | Never emitted — Kiro runs tools internally. |
+| `model` | 🔄 | Echoed from request. |
+| `stop_reason` | ✅ | Maps ACP stop reasons: end_turn→end_turn, max_tokens→max_tokens, stop_sequence→stop_sequence, others→end_turn. Never `tool_use`. |
+| `stop_sequence` | 🔄 | Always `null`. |
+| `usage.input_tokens` | ⚠️ | Always `0` — Kiro exposes no prompt/completion split. |
+| `usage.output_tokens` | ⚠️ | Approximate total from `_kiro.dev/metadata`, not a true output-only count. `input + output` sums to the approximate total. |
+
+### Streaming
+
+| Event | Status | Notes |
+|-------|--------|-------|
+| `message_start` | ✅ | Empty `content`, `stop_reason`/`stop_sequence` null, `usage` present. |
+| `content_block_start` | ✅ | Single text block at index 0. |
+| `content_block_delta` (`text_delta`) | ✅ | From `agent_message_chunk`. |
+| `content_block_delta` (`input_json_delta`) | ❌ | No tool_use blocks emitted. |
+| `content_block_stop` | ✅ | |
+| `message_delta` | ✅ | Carries `stop_reason`, `stop_sequence: null`, cumulative `usage`. |
+| `message_stop` | ✅ | |
+| `ping` | — | Not emitted (optional per spec). |
+| `error` | ✅ | Emitted on prompt failure after streaming has started. |
 
 ## ACP → OpenAI
 
@@ -161,7 +224,10 @@ Legend: ✅ Supported | ⚠️ Partial | ❌ Not supported | 🔄 Custom handlin
 
 ## Actionable gaps (priority order)
 
-No remaining protocol gaps. All translatable features are implemented (some behind feature flags).
+- **Anthropic `usage` accuracy** — `input_tokens` is always `0` and `output_tokens` carries an approximate total, since Kiro exposes no prompt/completion split. Blocked on richer usage data from the ACP backend.
+- **Conversation replay** — assistant history from `messages[]` is only included when `KIRO_BRIDGE_REPLAY_HISTORY` is set; full multi-turn replay is not the default.
+
+All other translatable features are implemented (some behind feature flags).
 
 ## Known limitations
 
@@ -171,6 +237,6 @@ OpenAI's tool protocol is **bidirectional** — model proposes a tool call, clie
 
 These cannot be cleanly bridged. Client-defined tools (e.g. Raycast's `@calculator`, `@location`) require the model to output structured `tool_calls` that the client executes. Kiro doesn't know about client tools and has no mechanism to invoke them.
 
-Kiro's own tools (read, grep, glob, web_search, etc.) run transparently inside the ACP session. They can be surfaced as text annotations via `KIRO_BRIDGE_SHOW_TOOLS` but cannot be rendered as interactive tool call UI in OpenAI-compatible clients.
+Kiro's own tools (read, grep, glob, web_search, etc.) run transparently inside the ACP session. They can be surfaced as text annotations via `KIRO_BRIDGE_SHOW_TOOLS` but cannot be rendered as interactive tool call UI in either OpenAI- or Anthropic-compatible clients. On the Anthropic endpoint this means no `tool_use` content blocks and no `stop_reason: "tool_use"` are ever emitted.
 
 **Raycast config:** Set `tools.supported: false` to avoid errors when using tool-dependent extensions.
