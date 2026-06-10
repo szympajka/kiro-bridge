@@ -1,13 +1,14 @@
 # kiro-bridge
 
-Bring Kiro to every AI tool in your workflow — Raycast, Continue, Open WebUI, and anything that speaks the OpenAI API.
+Bring Kiro to every AI tool in your workflow — Raycast, Continue, Open WebUI, Claude Code, and anything that speaks the OpenAI or Anthropic API.
 
 ```
 Client  ──POST /v1/chat/completions──▶  kiro-bridge  ──JSON-RPC/stdio──▶  kiro-cli acp
+        ──POST /v1/messages──────────▶               ──session/prompt────▶
         ◀──SSE stream────────────────               ◀──session/update────
 ```
 
-kiro-bridge is a lightweight HTTP server that translates between the [OpenAI Chat Completions API](https://platform.openai.com/docs/api-reference/chat) and Kiro's [Agent Client Protocol (ACP)](https://agentclientprotocol.com). It spawns `kiro-cli acp` as a backend, so you get everything Kiro offers — models, tools, file access, web search — streamed back through a standard OpenAI endpoint that any client can consume.
+kiro-bridge is a lightweight HTTP server that translates between mainstream chat APIs — the [OpenAI Chat Completions API](https://platform.openai.com/docs/api-reference/chat) and the [Anthropic Messages API](https://docs.anthropic.com/en/api/messages) — and Kiro's [Agent Client Protocol (ACP)](https://agentclientprotocol.com). It spawns `kiro-cli acp` as a backend, so you get everything Kiro offers — models, tools, file access, web search — streamed back through a standard endpoint that your client already speaks.
 
 ## Quick start
 
@@ -68,9 +69,9 @@ That's it — the bridge is running at `http://127.0.0.1:11435/v1`. No backgroun
 
 ### 4. Connect your client
 
-The bridge exposes an OpenAI-compatible API at `http://127.0.0.1:11435/v1`. Point any OpenAI-compatible client at it.
+The bridge exposes an OpenAI-compatible API at `http://127.0.0.1:11435/v1` and an Anthropic-compatible API at the same base URL (`/v1/messages`). Point any OpenAI- or Anthropic-compatible client at it.
 
-Example for Raycast — add to `~/.config/raycast/ai/providers.yaml`:
+The example below uses Raycast (an OpenAI-compatible client) — add to `~/.config/raycast/ai/providers.yaml`:
 
 ```yaml
 providers:
@@ -95,6 +96,7 @@ providers:
 ## Features
 
 - **OpenAI-compatible API** — `POST /v1/chat/completions` with streaming (SSE) and non-streaming responses
+- **Anthropic-compatible API** — `POST /v1/messages` with streaming and non-streaming responses, for clients that speak the Anthropic Messages format (experimental, see disclaimer below)
 - **Dynamic model list** — `GET /v1/models` serves real models from Kiro (Claude Opus, Sonnet, Haiku, DeepSeek, and more)
 - **Vision support** — forward images from OpenAI `image_url` content to Kiro (experimental)
 - **Tool transparency** — Kiro's tools (file search, grep, web search) run inside the ACP session with optional annotations
@@ -105,9 +107,21 @@ providers:
 
 > **Tool permissions:** Kiro requests permission for write/edit tools. The bridge rejects these by default. To allow writes, add the tools to `allowedTools` in your agent config so Kiro pre-approves them without asking.
 
+### Anthropic endpoint (`/v1/messages`)
+
+The bridge can also speak the Anthropic Messages format so that Anthropic-format clients (such as Claude Code) can use Kiro as a backend. Requests still go to your local `kiro-cli` — the bridge never contacts Anthropic.
+
+> **⚠️ At your own risk:** Pointing Anthropic's own client software (e.g. Claude Code) at a non-Anthropic backend may violate Anthropic's terms of service. This endpoint is provided for experimentation and interoperability. You are responsible for ensuring your usage complies with the terms of any client you connect.
+
+Limitations of this endpoint:
+
+- **No interactive tool use.** Kiro runs its tools internally, so the bridge never emits Anthropic `tool_use` content blocks or `stop_reason: "tool_use"`. Clients that expect to drive tool calls themselves won't receive that handshake. Kiro's own tools can be surfaced as text annotations via `KIRO_BRIDGE_SHOW_TOOLS`.
+- **Approximate token usage.** Kiro exposes only an approximate total token count, not a prompt/completion split. The bridge reports this total in `output_tokens` and leaves `input_tokens` at `0`, so `input_tokens + output_tokens` sums to the approximate total. Treat these as estimates, not exact counts.
+- **`max_tokens` is ignored.** The field is required by the Anthropic format and accepted, but Kiro manages its own output limits, so it is not forwarded.
+
 ## Configuration
 
-All configuration is via environment variables:
+Configuration is via environment variables, with optional command-line flags that take precedence.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -121,6 +135,20 @@ All configuration is via environment variables:
 | `KIRO_BRIDGE_REPLAY_HISTORY` | unset | Set to include assistant messages in prompt for conversation replay (experimental) |
 | `KIRO_BRIDGE_ENABLE_IMAGES` | unset | Set to forward image content from OpenAI requests to ACP (experimental) |
 | `KIRO_BRIDGE_CONTEXT_WINDOW` | `200000` | Context window size for token usage estimation |
+
+### Command-line flags
+
+Flags override the corresponding environment variable when set. Precedence is **flag > environment variable > default**.
+
+| Flag | Env equivalent | Description |
+|------|----------------|-------------|
+| `--port` | `KIRO_BRIDGE_PORT` | HTTP server port |
+| `--cwd` | `KIRO_BRIDGE_CWD` | Working directory for ACP sessions |
+| `--cli` | `KIRO_CLI_PATH` | Path to kiro-cli binary |
+| `--agent` | `KIRO_BRIDGE_AGENT` | Kiro agent config to activate |
+| `--version` | — | Print version and exit |
+
+> **Note:** As of v0.8.0 the binary parses command-line flags. Unknown arguments now cause it to exit with an error. Wrapper scripts or service definitions that pass unexpected arguments must be updated.
 
 ## Running as a background service
 
@@ -230,8 +258,8 @@ nix run .#release
 - The bridge spawns `kiro-cli acp` as a child process and communicates via JSON-RPC over stdio.
 - On startup failure, it retries with exponential backoff (1s→60s cap) instead of crashing. The HTTP server starts immediately and returns 503 while connecting.
 - It creates one ACP session at startup and reuses it for subsequent requests.
-- Incoming OpenAI `/v1/chat/completions` requests are translated to ACP `session/prompt` calls.
-- ACP `agent_message_chunk` notifications are streamed back as OpenAI SSE chunks.
+- Incoming requests on `/v1/chat/completions` (OpenAI) and `/v1/messages` (Anthropic) are translated to ACP `session/prompt` calls.
+- ACP `agent_message_chunk` notifications are streamed back as SSE chunks in the format matching the endpoint the client called.
 - Kiro tool calls (file search, web fetch, etc.) happen transparently inside the ACP session — only the final text response is returned to the client.
 - When Kiro requests permission for write tools, the bridge rejects by default. Pre-approved tools in the agent config bypass this.
 - System and user messages from the current request are flattened into a single prompt; full conversation replay from `messages[]` is planned but not implemented yet.
