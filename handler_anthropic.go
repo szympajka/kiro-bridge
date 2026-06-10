@@ -117,6 +117,10 @@ func writeAnthropicStreamTerminal(w http.ResponseWriter, flusher http.Flusher, s
 	writeAnthropicEvent(w, flusher, "message_delta", AnthropicMessageDeltaEvent{
 		Type:  "message_delta",
 		Delta: AnthropicMessageDelta{StopReason: stopReason, StopSequence: nil},
+		// Kiro only exposes an approximate total token count, not a
+		// prompt/completion split. We surface it as output_tokens (input_tokens
+		// stays 0) so that input+output sums to the approximate total. This is
+		// an approximation, not a true output-only count. See README.
 		Usage: AnthropicUsage{OutputTokens: usage.TotalTokens},
 	})
 	writeAnthropicEvent(w, flusher, "message_stop", AnthropicMessageStopEvent{Type: "message_stop"})
@@ -203,7 +207,10 @@ func handleAnthropicNonStream(w http.ResponseWriter, b Bridge, prompt []ContentB
 		Model:        model,
 		StopReason:   &reason,
 		StopSequence: nil,
-		Usage:        AnthropicUsage{OutputTokens: usage.TotalTokens},
+		// Approximate total from Kiro surfaced as output_tokens; input_tokens
+		// stays 0 so input+output sums to the approximate total. Not a true
+		// output-only count. See README.
+		Usage: AnthropicUsage{OutputTokens: usage.TotalTokens},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
