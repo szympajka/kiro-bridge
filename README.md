@@ -264,6 +264,12 @@ nix run .#release
 - When Kiro requests permission for write tools, the bridge rejects by default. Pre-approved tools in the agent config bypass this.
 - System and user messages from the current request are flattened into a single prompt; full conversation replay from `messages[]` is planned but not implemented yet.
 
+## Disclaimer
+
+kiro-bridge is an independent, unofficial project. It is not affiliated with, endorsed by, or sponsored by Amazon/AWS (Kiro), Anthropic, or OpenAI. "Kiro," "Claude," "Anthropic," "OpenAI," and related marks belong to their respective owners and are used here only to describe API compatibility.
+
+The bridge talks only to your local, authenticated `kiro-cli` — it does not contact Anthropic or OpenAI. You are responsible for complying with the terms of service of Kiro and of any client you connect (see the [Anthropic endpoint](#anthropic-endpoint-v1messages) note), and for your use of this software. Use at your own risk.
+
 ---
 
 Built by [szympajka](https://github.com/szympajka) with [Kiro](https://kiro.dev) and for the ❤️ of useful software.
